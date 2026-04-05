@@ -34,10 +34,10 @@ jobs:
           COPILOTO_PASSWORD: ${{ secrets.COPILOTO_PASSWORD }}
           PGPASSWORD:        ${{ secrets.PGPASSWORD }}
 
-          PGHOST:     "db.ceprzonmxserzkxxkwrj.supabase.co"
-          PGPORT:     "5432"
+          PGHOST:     "aws-1-us-east-2.pooler.supabase.com"
+          PGPORT:     "6543"
           PGDATABASE: "postgres"
-          PGUSER:     "postgres"
+          PGUSER:     "postgres.ceprzonmxserzkxxkwrj"
 
           TALLERES_XLSX:     Data/talleres.xlsx
           MASTER_FLOTA_XLSX: Data/master_Flota.xlsx
