@@ -24,26 +24,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r Scripts/requirements.txt
 
-      - name: Resolve Supabase host to IPv4
-        run: |
-          python3 << 'EOF'
-          import socket, os
-          host = "db.ceprzonmxserzkxxkwrj.supabase.co"
-          results = socket.getaddrinfo(host, 5432, socket.AF_INET)
-          ipv4 = results[0][4][0]
-          print(f"Resolved {host} -> {ipv4}")
-          with open(os.environ['GITHUB_ENV'], 'a') as f:
-              f.write(f"PGHOST_IPV4={ipv4}\n")
-          EOF
-
       - name: Run pipeline
         env:
           COPILOTO_EMAIL:    ${{ secrets.COPILOTO_EMAIL }}
           COPILOTO_PASSWORD: ${{ secrets.COPILOTO_PASSWORD }}
           PGPASSWORD:        ${{ secrets.PGPASSWORD }}
 
-          # Conexión directa con IPv4 forzado
-          PGHOST:     ${{ env.PGHOST_IPV4 }}
+          PGHOST:     "db.ceprzonmxserzkxxkwrj.supabase.co"
           PGPORT:     "5432"
           PGDATABASE: "postgres"
           PGUSER:     "postgres"

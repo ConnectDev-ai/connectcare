@@ -148,7 +148,16 @@ def parse_latlon_cell(s: Any) -> Tuple[Optional[float], Optional[float]]:
 
 def get_engine() -> Engine:
     url = f"postgresql+psycopg://{PGUSER}:{PGPASSWORD}@{PGHOST}:{PGPORT}/{PGDATABASE}"
-    return create_engine(url, future=True, pool_pre_ping=True)
+    # Forzar IPv4 manteniendo el hostname para SNI (Supabase lo necesita para identificar el tenant)
+    connect_args: dict = {}
+    try:
+        import socket
+        ipv4 = socket.getaddrinfo(PGHOST, int(PGPORT), socket.AF_INET)[0][4][0]
+        connect_args["hostaddr"] = ipv4
+        log.info("Conectando a Supabase via IPv4: %s (SNI: %s)", ipv4, PGHOST)
+    except Exception:
+        pass
+    return create_engine(url, future=True, pool_pre_ping=True, connect_args=connect_args)
 
 
 # =========================
