@@ -223,9 +223,12 @@ def to_float(s: pd.Series) -> pd.Series:
 @st.cache_resource
 def _get_engine():
     db_url = st.secrets["DATABASE_URL"]
-    # Supabase entrega postgresql://, SQLAlchemy+psycopg3 necesita postgresql+psycopg://
-    db_url = db_url.replace("postgresql://", "postgresql+pg8000://", 1)
-    db_url = db_url.replace("postgres://", "postgresql+pg8000://", 1)
+    # Forzar psycopg3 con sslmode=require para que Supabase identifique el tenant via SNI
+    db_url = db_url.replace("postgresql+pg8000://", "postgresql+psycopg://", 1)
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+    if "sslmode=" not in db_url:
+        db_url += ("&" if "?" in db_url else "?") + "sslmode=require"
     return create_engine(db_url, pool_pre_ping=True)
 
 @st.cache_data(ttl=3600)
