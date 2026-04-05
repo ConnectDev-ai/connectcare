@@ -2,7 +2,7 @@ streamlit
 pandas
 numpy
 sqlalchemy
-psycopg[binary]
+psycopg2-binary
 openpyxl
 requests
 python-dotenv

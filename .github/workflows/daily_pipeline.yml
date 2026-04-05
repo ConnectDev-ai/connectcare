@@ -2,7 +2,6 @@ name: Daily Coverage Pipeline
 
 on:
   schedule:
-    # 10:00 AM hora Santiago (UTC-4 verano / UTC-3 invierno)
     - cron: "0 14 * * *"
   workflow_dispatch:
 
@@ -23,16 +22,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r Scripts/requirements.txt
-
-      - name: Force IPv4 for Supabase (map hostname in /etc/hosts)
-        run: |
-          IPV4=$(python3 -c "
-          import socket
-          results = socket.getaddrinfo('db.ceprzonmxserzkxxkwrj.supabase.co', 5432, socket.AF_INET)
-          print(results[0][4][0])
-          ")
-          echo "Resolved to IPv4: $IPV4"
-          echo "$IPV4 db.ceprzonmxserzkxxkwrj.supabase.co" | sudo tee -a /etc/hosts
 
       - name: Run pipeline
         env:
