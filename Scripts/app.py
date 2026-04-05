@@ -147,9 +147,18 @@ def parse_latlon_cell(s: Any) -> Tuple[Optional[float], Optional[float]]:
         return None, None
 
 def get_engine() -> Engine:
-    url = f"postgresql+psycopg2://{PGUSER}:{PGPASSWORD}@{PGHOST}:{PGPORT}/{PGDATABASE}"
-    return create_engine(url, future=True, pool_pre_ping=True,
-                         connect_args={"sslmode": "require"})
+    import psycopg
+    _params = dict(
+        host=PGHOST, port=int(PGPORT),
+        user=PGUSER, password=PGPASSWORD,
+        dbname=PGDATABASE, sslmode="require",
+    )
+    return create_engine(
+        "postgresql+psycopg://",
+        creator=lambda: psycopg.connect(**_params),
+        future=True,
+        pool_pre_ping=True,
+    )
 
 
 # =========================
