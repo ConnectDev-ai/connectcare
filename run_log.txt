@@ -1,0 +1,36 @@
+2026-03-13 16:06:27,957 [INFO] Snapshot timestamp (UTC): 2026-03-13T19:06:27Z
+2026-03-13 16:06:27,958 [INFO] Snapshot timestamp (Local America/Santiago): 2026-03-13T16:06:27-0300 | bucket=medio
+2026-03-13 16:06:27,958 [INFO] Talleres XLSX: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Data\talleres.xlsx
+2026-03-13 16:06:29,104 [INFO] Talleres cargados: 25
+2026-03-13 16:06:30,256 [INFO] Login OK. Token obtenido.
+2026-03-13 16:06:33,469 [INFO] CSV descargado guardado en: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\out\vehicle_records_download_20260313_190627Z.csv
+2026-03-13 16:06:33,647 [INFO] CSV leído con encoding=utf-8-sig | filas=20411 cols=20
+2026-03-13 16:06:33,674 [INFO] Filtro source=COPILOTO -> filas=9423
+2026-03-13 16:06:33,713 [INFO] Filtro gps_timestamp <= 15 días -> filas=8407
+2026-03-13 16:06:33,720 [INFO] Filtro has_gps_data=True -> filas=8407
+2026-03-13 16:06:33,744 [INFO] Unidades únicas snapshot: 8320
+2026-03-13 16:06:33,825 [INFO] Snapshot guardado: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\out\snapshot_units_20260313_190627Z.csv
+2026-03-13 16:06:33,850 [INFO] Coverage OVERLAP guardada: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\out\coverage_taller_100km_overlap_20260313_190627Z.csv
+2026-03-13 16:06:33,890 [INFO] Coverage EXCLUSIVE guardada: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\out\coverage_taller_100km_exclusive_20260313_190627Z.csv
+2026-03-13 16:06:33,969 [INFO] Unidades asignables por taller guardadas: C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\out\units_by_taller_100km_20260313_190627Z.csv
+2026-03-13 16:06:35,178 [INFO] dim_taller upsert OK | filas=25
+2026-03-13 16:06:35,221 [INFO] snapshot_run insert/upsert OK | run_id=3
+2026-03-13 16:06:37,934 [INFO] snapshot_unit insert/upsert OK | filas=8320
+2026-03-13 16:06:37,964 [INFO] snapshot_taller_overlap insert/upsert OK | filas=25
+2026-03-13 16:06:38,003 [INFO] snapshot_taller_exclusive insert/upsert OK | filas=25
+--- Logging error ---
+Traceback (most recent call last):
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\logging\__init__.py", line 1154, in emit
+    stream.write(msg + self.terminator)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 34: character maps to <undefined>
+Call stack:
+  File "C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\app.py", line 891, in <module>
+    main()
+  File "C:\Users\ssanchezr\OneDrive - grupokaufmann\Documentos\Dev\geoworkshop\Scripts\app.py", line 887, in main
+    log.info("OK \u2705 snapshot cargado en PostgreSQL/PostGIS")
+Message: 'OK \u2705 snapshot cargado en PostgreSQL/PostGIS'
+Arguments: ()

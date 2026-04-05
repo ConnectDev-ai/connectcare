@@ -1,0 +1,6 @@
+on:
+  schedule:
+    - cron: "0 12 * * *"  # 09:00 -03
+    - cron: "0 16 * * *"  # 13:00 -03
+    - cron: "0 21 * * *"  # 18:00 -03
+  workflow_dispatch: {}

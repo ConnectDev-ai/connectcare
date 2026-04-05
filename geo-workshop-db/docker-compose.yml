@@ -1,0 +1,22 @@
+version: '3.9'
+
+services:
+
+  postgis:
+    image: postgis/postgis:15-3.4
+
+    container_name: geo_postgis
+
+    restart: always
+
+    environment:
+      POSTGRES_DB: geocobertura
+      POSTGRES_USER: geo_user
+      POSTGRES_PASSWORD: geo_password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d

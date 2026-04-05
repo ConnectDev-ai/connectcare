@@ -1,0 +1,51 @@
+name: Daily Coverage Pipeline
+
+on:
+  schedule:
+    # 10:00 AM hora Santiago (UTC-4 verano / UTC-3 invierno)
+    # Ajustar si cambia el horario de verano
+    - cron: "0 14 * * *"
+  workflow_dispatch:   # permite ejecutarlo manualmente desde GitHub Actions
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: Scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r Scripts/requirements.txt
+
+      - name: Run pipeline
+        env:
+          # Credenciales Copiloto
+          COPILOTO_EMAIL:    ${{ secrets.COPILOTO_EMAIL }}
+          COPILOTO_PASSWORD: ${{ secrets.COPILOTO_PASSWORD }}
+
+          # Conexión Supabase (PostgreSQL)
+          PGHOST:     ${{ secrets.PGHOST }}
+          PGPORT:     ${{ secrets.PGPORT }}
+          PGDATABASE: ${{ secrets.PGDATABASE }}
+          PGUSER:     ${{ secrets.PGUSER }}
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+
+          # Rutas de archivos de datos (relativas a la raíz del repo)
+          TALLERES_XLSX:     Data/talleres.xlsx
+          MASTER_FLOTA_XLSX: Data/master_Flota.xlsx
+
+          # Parámetros opcionales
+          RADIUS_KM:        "100"
+          MAX_GPS_AGE_DAYS: "15"
+          ASSIGN_MODE:      "both"
+          LOCAL_TZ:         "America/Santiago"
+
+        run: python Scripts/app.py

@@ -1,0 +1,29 @@
+# Credenciales y configuración local
+.env
+*.env
+.streamlit/secrets.toml
+
+# Outputs del pipeline (se regeneran cada día)
+Scripts/out/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Datos de PostgreSQL local (Docker)
+geo-workshop-db/data/
+
+# Excel temporales
+~$*.xlsx
+
+# Claude Code (configuración local del IDE)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
