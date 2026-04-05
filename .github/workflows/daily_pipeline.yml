@@ -34,10 +34,10 @@ jobs:
           COPILOTO_PASSWORD: ${{ secrets.COPILOTO_PASSWORD }}
           PGPASSWORD:        ${{ secrets.PGPASSWORD }}
 
-          PGHOST:     "aws-1-us-east-2.pooler.supabase.com"
-          PGPORT:     "6543"
-          PGDATABASE: "postgres"
-          PGUSER:     "postgres.ceprzonmxserzkxxkwrj"
+          PGHOST:     "ep-old-sky-am0be75w-pooler.c-5.us-east-1.aws.neon.tech"
+          PGPORT:     "5432"
+          PGDATABASE: "neondb"
+          PGUSER:     "neondb_owner"
 
           TALLERES_XLSX:     Data/talleres.xlsx
           MASTER_FLOTA_XLSX: Data/master_Flota.xlsx
