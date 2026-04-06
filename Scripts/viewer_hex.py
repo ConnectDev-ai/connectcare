@@ -334,7 +334,6 @@ df_units = df_units.dropna(subset=["lat", "lon"])
 df_units = df_units[df_units["lat"].between(-90, 90) & df_units["lon"].between(-180, 180)]
 
 df_ubt: pd.DataFrame = _load_units_by_taller(_engine, _run_id)
-st.sidebar.write(f"DEBUG run_id={_run_id} | df_ubt={len(df_ubt)} filas | cols={list(df_ubt.columns[:5])}")
 
 df_taller     = None
 bubble_metric = None
@@ -622,10 +621,8 @@ elif pagina_activa == "🔍  Detalle Unidades":
         with col_f4:
             dist_max_filtro = st.slider("Dist. máx. (km)", min_value=0, max_value=100, value=100, step=5)
         df_det = df_ubt.copy()
-        st.write(f"DEBUG paso 0: {len(df_det)} filas")
         if "Empresa" in df_det.columns:
             df_det = df_det[df_det["Empresa"].notna() & (df_det["Empresa"].astype(str).str.strip() != "nan")]
-        st.write(f"DEBUG paso 1 (empresa filter): {len(df_det)} filas")
         if taller_sel:
             df_det = df_det[df_det["taller_cercano_nombre"].isin(taller_sel)]
         if empresa_sel and "Empresa" in df_det.columns:
@@ -636,9 +633,7 @@ elif pagina_activa == "🔍  Detalle Unidades":
             mask_pat = df_det["Patente"].astype(str).str.upper().str.contains(q, na=False) if "Patente" in df_det.columns else pd.Series(False, index=df_det.index)
             df_det = df_det[mask_vin | mask_pat]
         if "distancia_taller_cercano_km" in df_det.columns:
-            st.write(f"DEBUG dist sample: {df_det['distancia_taller_cercano_km'].head(3).tolist()}")
             df_det = df_det[df_det["distancia_taller_cercano_km"] <= dist_max_filtro]
-        st.write(f"DEBUG paso final: {len(df_det)} filas")
         show_cols = [c for c in [
             "unit_id", "Empresa", "Patente", "Marca", "Modelo",
             "taller_cercano_nombre", "distancia_taller_cercano_km",

@@ -460,6 +460,11 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
     if df_units.empty: return
     cal = build_snapshot_calendar_fields(snap_ts)
     df  = df_units.copy()
+    # Preferir columna enriquecida "Empresa" (capital E) sobre "empresa" (API, suele estar vacía)
+    if "Empresa" in df.columns:
+        df["empresa"] = df["Empresa"].where(df["Empresa"].notna(), df.get("empresa"))
+    if "Patente" in df.columns:
+        df["patente"] = df["Patente"].where(df["Patente"].notna(), df.get("patente"))
     for col in ["vin","imei","patente","empresa","vehicle_name"]:
         if col not in df.columns: df[col] = None
     df["run_id"]          = run_id
