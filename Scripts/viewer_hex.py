@@ -334,6 +334,7 @@ df_units = df_units.dropna(subset=["lat", "lon"])
 df_units = df_units[df_units["lat"].between(-90, 90) & df_units["lon"].between(-180, 180)]
 
 df_ubt: pd.DataFrame = _load_units_by_taller(_engine, _run_id)
+st.sidebar.write(f"DEBUG run_id={_run_id} | df_ubt={len(df_ubt)} filas")
 
 df_taller     = None
 bubble_metric = None
