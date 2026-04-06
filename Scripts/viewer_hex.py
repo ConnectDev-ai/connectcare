@@ -263,7 +263,7 @@ def _load_units_by_taller(_engine, run_id: int) -> pd.DataFrame:
                    taller_cercano_id, taller_cercano_nombre,
                    distancia_taller_cercano_km, dentro_radio_taller, radio_taller_km
             FROM snapshot_unit
-            WHERE run_id = :run_id AND dentro_radio_taller = TRUE
+            WHERE run_id = :run_id
         """), conn, params={"run_id": run_id})
 
 @st.cache_data(ttl=3600)
