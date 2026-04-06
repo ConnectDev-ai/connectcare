@@ -334,7 +334,6 @@ df_units = df_units.dropna(subset=["lat", "lon"])
 df_units = df_units[df_units["lat"].between(-90, 90) & df_units["lon"].between(-180, 180)]
 
 df_ubt: pd.DataFrame = _load_units_by_taller(_engine, _run_id)
-st.sidebar.write(f"run_id={_run_id} | filas={len(df_ubt)} | empresa_notnull={df_ubt['Empresa'].notna().sum() if 'Empresa' in df_ubt.columns else 'NO_COL'}")
 
 df_taller     = None
 bubble_metric = None
