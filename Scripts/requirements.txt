@@ -1,4 +1,5 @@
 streamlit
+flask
 pandas
 numpy
 sqlalchemy
@@ -8,3 +9,4 @@ requests
 python-dotenv
 pydeck
 plotly
+gunicorn

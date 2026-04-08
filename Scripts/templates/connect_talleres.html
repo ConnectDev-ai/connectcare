@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Connect Talleres | Kaufmann Intelligence</title>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;0,900;1,400&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+
+<!-- MapLibre GL -->
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet"/>
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+
+<!-- deck.gl standalone (includes all layers + mapbox overlay) -->
+<script src="https://unpkg.com/deck.gl@9/dist.min.js"></script>
+
+<script>
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            colors: {
+                "primary":                 "#f2be8c",
+                "on-primary":              "#482904",
+                "primary-dim":             "#d4a373",
+                "surface":                 "#131313",
+                "surface-dim":             "#0e0e0e",
+                "surface-container-low":   "#1c1b1b",
+                "surface-container":       "#201f1f",
+                "surface-container-high":  "#2a2a2a",
+                "surface-container-highest":"#353534",
+                "surface-variant":         "#353534",
+                "surface-bright":          "#3a3939",
+                "on-surface":              "#e5e2e1",
+                "on-surface-variant":      "#d4c4b7",
+                "on-surface-dim":          "#9c8e82",
+                "outline":                 "#9c8e82",
+                "outline-variant":         "#50453b",
+                "tertiary":                "#a7ccea",
+                "background":              "#131313",
+            },
+        },
+    },
+};
+</script>
+
+<style>
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; }
+.serif { font-family: 'Noto Serif', serif; }
+.icon { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; font-size: 20px; line-height: 1; user-select: none; }
+.icon-fill { font-variation-settings: 'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #131313; }
+::-webkit-scrollbar-thumb { background: #353534; border-radius: 10px; }
+
+/* ── Glass ── */
+.glass { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+/* ── Map container ── */
+#deck-container { position: absolute; inset: 0; }
+#deck-container canvas { position: absolute !important; inset: 0 !important; }
+
+/* ── MapLibre attribution ── */
+.maplibregl-ctrl-attrib { opacity: 0.25 !important; font-size: 9px !important; }
+.maplibregl-ctrl-attrib a { color: #9c8e82 !important; }
+
+/* ── Nav active state ── */
+.nav-link { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            color: rgba(229,226,225,0.55); font-weight: 500; font-size: 14px;
+            border-radius: 6px; transition: all .18s; text-decoration: none; cursor: pointer; }
+.nav-link:hover { color: #e5e2e1; background: rgba(53,53,52,0.5); }
+.nav-link.active { background: #353534; color: #f2be8c; font-weight: 700;
+                   border-radius: 0 6px 6px 0; border-left: 3px solid #f2be8c; padding-left: 13px; }
+
+/* ── Tool button ── */
+.tool-btn { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(53,53,52,0.7); backdrop-filter: blur(20px);
+            color: rgba(229,226,225,0.6); cursor: pointer; transition: all .18s; }
+.tool-btn:hover { color: #f2be8c; background: rgba(53,53,52,0.95); }
+.tool-btn.active { color: #f2be8c; border-color: rgba(242,190,140,0.3); }
+
+/* ── KPI strip card ── */
+.kpi-card { min-width: 180px; flex: 1; background: rgba(53,53,52,0.55);
+            border: 1px solid rgba(80,69,59,0.25); border-radius: 8px; padding: 14px 16px; }
+
+/* ── Deck.gl custom tooltip ── */
+#deck-tooltip {
+    position: absolute; pointer-events: none; z-index: 50; display: none;
+    font-family: 'Manrope', sans-serif;
+}
+</style>
+</head>
+
+<body class="flex overflow-hidden" style="height:100vh">
+
+<!-- ════════════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════════ -->
+<aside class="hidden md:flex flex-col h-screen flex-shrink-0 bg-[#1c1b1b] border-r border-[#353534]/25"
+       style="width:272px;">
+
+    <!-- Brand -->
+    <div class="px-8 pt-8 mb-8">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center"
+                 style="background:linear-gradient(135deg,#f2be8c,#a0724a);">
+                <span class="icon icon-fill text-[#482904]" style="font-size:18px;">directions_bus</span>
+            </div>
+            <div class="serif text-[#f2be8c] font-bold text-lg leading-tight">Fleet Intelligence</div>
+        </div>
+        <div class="text-[9px] text-[#e5e2e1]/30 font-light tracking-[0.2em] uppercase">
+            Kaufmann · The Digital Curator
+        </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 px-3 space-y-0.5">
+        <a class="nav-link" onclick="setPage('ejecutivo',this)">
+            <span class="icon">dashboard</span> Vista Ejecutiva
+        </a>
+        <a class="nav-link" onclick="setPage('detalle',this)">
+            <span class="icon">directions_bus</span> Detalle Unidades
+        </a>
+        <a class="nav-link" onclick="setPage('tendencia',this)">
+            <span class="icon">trending_up</span> Tendencia Semanal
+        </a>
+        <a class="nav-link active" id="nav-mapa" onclick="setPage('mapa',this)">
+            <span class="icon icon-fill">build</span> Connect Talleres
+        </a>
+        <a class="nav-link" onclick="setPage('reportes',this)">
+            <span class="icon">assessment</span> Reportes
+        </a>
+    </nav>
+
+    <!-- Sidebar KPIs -->
+    <div class="px-5 mb-4">
+        <div class="text-[9px] text-[#e5e2e1]/25 font-bold tracking-[0.18em] uppercase mb-2 px-1">
+            KPIs del Snapshot
+        </div>
+        <div class="space-y-1.5" id="sidebar-kpis">
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Talleres activos</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-talleres">—</span>
+            </div>
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Dentro del radio</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-pct">—</span>
+            </div>
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Mayor carga</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-top-n">—</span>
+            </div>
+            <div class="px-3 py-2 bg-[#201f1f] rounded-md">
+                <div class="text-[9px] text-[#e5e2e1]/30 uppercase tracking-wide mb-0.5">Top taller</div>
+                <div class="text-xs text-[#e5e2e1]/70 font-medium truncate" id="sb-top-name">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generate Report button -->
+    <div class="px-5 pb-8">
+        <button onclick="downloadReport()"
+            class="w-full py-3.5 rounded-lg font-bold text-xs tracking-[0.15em] uppercase
+                   flex items-center justify-center gap-2 transition-all active:scale-95
+                   bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+            Generar Reporte
+            <span class="icon" style="font-size:16px;">download</span>
+        </button>
+    </div>
+</aside>
+
+
+<!-- ════════════════════════════════════════════════
+     MAIN
+════════════════════════════════════════════════ -->
+<main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#131313]">
+
+    <!-- ── Top Header ── -->
+    <header class="flex-shrink-0 z-40 flex justify-between items-center px-8 h-[72px]
+                   bg-[#131313]/90 backdrop-blur-md border-b border-[#353534]/20
+                   shadow-xl shadow-[#f2be8c]/[0.03]">
+        <div class="flex items-center gap-5">
+            <h1 class="serif text-2xl font-black text-[#f2be8c] tracking-tight">Connect Talleres</h1>
+            <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full
+                        bg-[#2a2a2a] border border-[#50453b]/30">
+                <span class="w-2 h-2 rounded-full bg-green-500" style="animation:pulse 2s infinite"></span>
+                <span class="text-[10px] font-bold tracking-[0.15em] text-[#e5e2e1]/50 uppercase">
+                    Live Intelligence Active
+                </span>
+            </div>
+            <span class="text-[10px] font-mono text-[#e5e2e1]/25" id="snap-ts-header"></span>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="text-[#e5e2e1]/50 hover:text-[#f2be8c] transition-colors p-1">
+                <span class="icon">notifications</span>
+            </button>
+            <button class="text-[#e5e2e1]/50 hover:text-[#f2be8c] transition-colors p-1">
+                <span class="icon">settings</span>
+            </button>
+            <div class="w-9 h-9 rounded-full bg-[#353534] border border-[#f2be8c]/20
+                        flex items-center justify-center ml-1">
+                <span class="icon text-[#f2be8c]/60">person</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── KPI Strip ── -->
+    <section class="flex-shrink-0 flex gap-3 px-6 py-4 bg-[#1c1b1b] border-b border-[#353534]/20
+                    overflow-x-auto" style="scrollbar-width:thin">
+        <div class="kpi-card">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                Unidades únicas snapshot
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-units">—</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                Unidades en hexbin
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-hexbin">—</span>
+            </div>
+        </div>
+        <div class="kpi-card border-l-2 border-[#f2be8c]/20">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                Hex radius (m)
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="serif text-2xl font-bold text-[#a7ccea]" id="kpi-radius">5,000</span>
+                <input type="range" min="500" max="20000" step="500" value="5000"
+                       id="radius-slider" oninput="onRadiusChange(this.value)"
+                       class="w-20 accent-[#a7ccea] cursor-pointer"/>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                % Dentro del radio
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="serif text-2xl font-bold text-green-400" id="kpi-pct">—</span>
+            </div>
+        </div>
+        <div class="kpi-card">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                Talleres activos
+            </div>
+            <div class="flex items-baseline gap-2">
+                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-talleres">—</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Map viewport ── -->
+    <div class="flex-1 relative overflow-hidden">
+
+        <!-- deck.gl canvas target -->
+        <div id="deck-container"></div>
+
+        <!-- Custom tooltip -->
+        <div id="deck-tooltip">
+            <div class="glass bg-[#131313]/80 border border-white/[0.08] rounded-xl p-4 shadow-2xl"
+                 style="min-width:220px">
+                <div class="serif text-[#f2be8c] font-bold text-sm mb-0.5" id="tt-nombre">—</div>
+                <div class="text-[10px] text-[#e5e2e1]/35 uppercase tracking-[0.12em] mb-3">
+                    Sucursal Kaufmann
+                </div>
+                <div class="flex gap-5">
+                    <div>
+                        <div class="serif text-2xl font-bold text-[#e5e2e1]" id="tt-asignadas">—</div>
+                        <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">unidades asignadas</div>
+                    </div>
+                    <div class="border-l border-[#353534] pl-5">
+                        <div class="serif text-2xl font-bold text-[#a7ccea]" id="tt-pct">—</div>
+                        <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">de la flota</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Floating KPI panel (top-left) ── -->
+        <div class="absolute top-5 left-5 z-30" style="width:240px">
+            <div class="glass bg-[#131313]/78 border border-white/[0.06] rounded-xl p-5 shadow-2xl relative">
+                <div id="fl-loading"
+                     class="absolute inset-0 rounded-xl flex items-center justify-center z-10"
+                     style="background:rgba(19,19,19,0.65)">
+                    <div class="text-[10px] text-[#e5e2e1]/30 font-mono" style="animation:pulse 1.5s infinite">
+                        Cargando datos...
+                    </div>
+                </div>
+                <h3 class="serif text-[#f2be8c] font-bold text-base mb-4">Métricas Críticas</h3>
+                <div class="space-y-2.5">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-[#e5e2e1]/45">Unidades en Cobertura</span>
+                        <span class="font-bold text-sm" id="fl-units">—</span>
+                    </div>
+                    <div class="h-px" style="background:rgba(53,53,52,0.6)"></div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-[#e5e2e1]/45">Talleres Activos</span>
+                        <span class="font-bold text-sm text-[#f2be8c]" id="fl-talleres">—</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-[#e5e2e1]/45">% Dentro del Radio</span>
+                        <span class="font-bold text-sm" id="fl-pct">—</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-[#e5e2e1]/45">Mayor Carga</span>
+                        <div class="text-right">
+                            <div class="font-bold text-sm" id="fl-top-n">—</div>
+                            <div class="text-[9px] text-[#f2be8c]/55">unidades</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Legend (bottom-left) ── -->
+        <div class="absolute z-30" style="bottom:140px;left:20px">
+            <div class="glass bg-[#1c1b1b]/88 border border-white/[0.05] p-4 rounded-lg">
+                <div class="text-[9px] text-[#e5e2e1]/40 font-bold tracking-[0.18em] uppercase mb-2">
+                    Densidad de Unidades
+                </div>
+                <div class="flex items-center gap-1 mb-1.5">
+                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.15)"></div>
+                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.40)"></div>
+                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.72)"></div>
+                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,1.00)"></div>
+                </div>
+                <div class="flex justify-between text-[8px] text-[#e5e2e1]/25 uppercase tracking-wide">
+                    <span>Baja</span><span>Crítica</span>
+                </div>
+                <!-- layer toggles -->
+                <div class="mt-3 pt-3 space-y-1.5" style="border-top:1px solid rgba(53,53,52,0.6)">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="chk-coverage" checked
+                               onchange="toggleLayer('coverage')"
+                               class="accent-[#f2be8c] w-3 h-3"/>
+                        <span class="text-[10px] text-[#e5e2e1]/50">Radio 100 km</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="chk-labels"
+                               onchange="toggleLayer('labels')"
+                               class="accent-[#f2be8c] w-3 h-3"/>
+                        <span class="text-[10px] text-[#e5e2e1]/50">Etiquetas talleres</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="chk-3d" checked
+                               onchange="toggle3D()"
+                               class="accent-[#f2be8c] w-3 h-3"/>
+                        <span class="text-[10px] text-[#e5e2e1]/50">Vista 3D</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Tool panel (top-right) ── -->
+        <div class="absolute top-5 right-5 z-30 flex flex-col gap-2">
+            <button class="tool-btn" onclick="zoomIn()" title="Acercar">
+                <span class="icon">add</span>
+            </button>
+            <button class="tool-btn" onclick="zoomOut()" title="Alejar">
+                <span class="icon">remove</span>
+            </button>
+            <button class="tool-btn" onclick="resetView()" title="Vista inicial">
+                <span class="icon">center_focus_strong</span>
+            </button>
+            <div style="height:4px"></div>
+            <button class="tool-btn" onclick="togglePitch()" title="Rotar vista" id="btn-pitch">
+                <span class="icon">3d_rotation</span>
+            </button>
+        </div>
+
+        <!-- ── Timeline / Player (bottom) ── -->
+        <div class="absolute bottom-0 left-0 right-0 z-30
+                    glass bg-[#1c1b1b]/92 border-t border-[#353534]/20 py-5 px-10">
+            <div class="max-w-4xl mx-auto flex flex-col gap-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <button class="w-10 h-10 rounded-full flex items-center justify-center
+                                       transition-colors hover:bg-[#f0bd8b] active:scale-90"
+                                style="background:#f2be8c">
+                            <span class="icon icon-fill text-[#482904]">play_arrow</span>
+                        </button>
+                        <div>
+                            <div class="serif text-sm font-bold text-[#f2be8c]" id="timeline-date">—</div>
+                            <div class="text-[10px] font-mono text-[#e5e2e1]/35" id="timeline-time">
+                                Último snapshot
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
+                                       text-[#f2be8c] bg-[#353534]">
+                            LIVE
+                        </button>
+                        <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
+                                       text-[#e5e2e1]/35 bg-[#201f1f] hover:text-[#f2be8c] transition-colors">
+                            HISTORIAL
+                        </button>
+                    </div>
+                </div>
+                <!-- Timeline track -->
+                <div class="relative w-full">
+                    <div class="w-full h-1.5 rounded-full" style="background:#353534">
+                        <div class="h-full rounded-full transition-all duration-500"
+                             style="width:75%;background:#f2be8c" id="timeline-bar"></div>
+                    </div>
+                    <div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full cursor-pointer
+                                border-4 border-[#1c1b1b]"
+                         style="left:75%;transform:translate(-50%,-50%);background:#f2be8c;
+                                box-shadow:0 0 12px rgba(242,190,140,0.4)"
+                         id="timeline-thumb"></div>
+                    <div class="flex justify-between mt-4 text-[9px] font-bold tracking-[0.12em]
+                                text-[#e5e2e1]/20 uppercase">
+                        <span>00:00</span><span>04:00</span><span>08:00</span>
+                        <span style="color:rgba(242,190,140,0.6)">12:00</span>
+                        <span>16:00</span><span>20:00</span><span>23:59</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end map viewport -->
+</main>
+
+<!-- ════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────
+let deckgl        = null;
+let appData       = null;
+let hexRadius     = 5000;
+let pitch3d       = true;
+let layerState    = { coverage: true, labels: false };
+let defaultCenter = { lat: -33.45, lon: -70.65, zoom: 4.7 };
+let viewState     = { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
+                      zoom: defaultCenter.zoom, pitch: 45, bearing: 0 };
+
+// Gold color ramp for HexagonLayer
+const HEX_COLORS = [
+    [242, 190, 140,  45],
+    [242, 190, 140, 105],
+    [242, 190, 140, 165],
+    [230, 155,  90, 210],
+    [200, 110,  45, 235],
+    [155,  65,  10, 255],
+];
+
+// ── Init deck.gl ───────────────────────────────────────────────────────────
+function initDeck() {
+    deckgl = new deck.DeckGL({
+        container: 'deck-container',
+        mapLib: maplibregl,
+        mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        initialViewState: viewState,
+        controller: true,
+        layers: [],
+        onViewStateChange: ({ viewState: vs }) => { viewState = vs; },
+        onLoad: loadData,
+        getTooltip: null,   // using custom tooltip div
+    });
+}
+
+// ── Load data from Flask API ───────────────────────────────────────────────
+function loadData() {
+    fetch('/api/data')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            appData = data;
+            updateKPIs(data);
+            renderLayers();
+            flyToData(data);
+            document.getElementById('fl-loading').style.display = 'none';
+        })
+        .catch(err => {
+            const el = document.getElementById('fl-loading');
+            el.innerHTML = `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">
+                Error: ${err.message}</div>`;
+        });
+}
+
+// ── KPI updates ───────────────────────────────────────────────────────────
+function fmt(n) { return n != null ? Number(n).toLocaleString('es-CL') : '—'; }
+function pct(p) { return p != null ? `${p}%` : '—'; }
+
+function updateKPIs(data) {
+    const k = data.kpis;
+    // Strip
+    document.getElementById('kpi-units').textContent    = fmt(k.total_units);
+    document.getElementById('kpi-hexbin').textContent   = fmt(k.hex_points);
+    document.getElementById('kpi-pct').textContent      = pct(k.pct_dentro);
+    document.getElementById('kpi-talleres').textContent = fmt(k.total_talleres);
+    // Floating panel
+    document.getElementById('fl-units').textContent     = fmt(k.total_units);
+    document.getElementById('fl-talleres').textContent  = fmt(k.total_talleres);
+    document.getElementById('fl-pct').textContent       = pct(k.pct_dentro);
+    document.getElementById('fl-top-n').textContent     = fmt(k.top_taller_n);
+    // Sidebar
+    document.getElementById('sb-talleres').textContent  = fmt(k.total_talleres);
+    document.getElementById('sb-pct').textContent       = pct(k.pct_dentro);
+    document.getElementById('sb-top-n').textContent     = fmt(k.top_taller_n);
+    document.getElementById('sb-top-name').textContent  = k.top_taller || '—';
+    // Header
+    document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
+    // Timeline
+    if (data.snap_ts) {
+        const [d, t] = data.snap_ts.split('T');
+        document.getElementById('timeline-date').textContent = d || data.snap_ts;
+        document.getElementById('timeline-time').textContent = (t || '') + ' UTC';
+    }
+}
+
+// ── Build deck.gl layers ──────────────────────────────────────────────────
+function buildLayers(data) {
+    const totalUnits = data.kpis.total_units || 1;
+    const layers = [];
+
+    // 1 — HexagonLayer (unit density)
+    layers.push(new deck.HexagonLayer({
+        id: 'hex-density',
+        data: data.units,
+        getPosition: d => [d.lon, d.lat],
+        radius: hexRadius,
+        elevationScale: 25,
+        elevationRange: [0, 2500],
+        extruded: pitch3d,
+        pickable: false,
+        opacity: 0.75,
+        coverage: 0.88,
+        colorRange: HEX_COLORS,
+    }));
+
+    // 2 — Coverage radius circles (togglable)
+    if (layerState.coverage) {
+        layers.push(new deck.ScatterplotLayer({
+            id: 'taller-coverage',
+            data: data.talleres,
+            getPosition: d => [d.lon, d.lat],
+            getRadius: d => (d.radius_km || 100) * 1000,
+            getFillColor: [242, 190, 140, 10],
+            getLineColor: [242, 190, 140, 70],
+            stroked: true,
+            filled: true,
+            lineWidthMinPixels: 1,
+            pickable: false,
+        }));
+    }
+
+    // 3 — Taller dots
+    layers.push(new deck.ScatterplotLayer({
+        id: 'talleres-dots',
+        data: data.talleres,
+        getPosition: d => [d.lon, d.lat],
+        getRadius: 4200,
+        getFillColor: [242, 190, 140, 235],
+        getLineColor: [255, 255, 255, 200],
+        lineWidthMinPixels: 2,
+        stroked: true,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 60],
+        onHover: info => showTooltip(info, totalUnits),
+    }));
+
+    // 4 — Taller labels (togglable)
+    if (layerState.labels) {
+        layers.push(new deck.TextLayer({
+            id: 'taller-labels',
+            data: data.talleres,
+            getPosition: d => [d.lon, d.lat],
+            getText: d => d.taller_nombre,
+            getSize: 13,
+            getColor: [242, 190, 140, 255],
+            getTextAnchor: 'middle',
+            getAlignmentBaseline: 'bottom',
+            getPixelOffset: [0, -52],
+            billboard: true,
+            pickable: false,
+        }));
+    }
+
+    return layers;
+}
+
+function renderLayers() {
+    if (!deckgl || !appData) return;
+    deckgl.setProps({ layers: buildLayers(appData) });
+}
+
+// ── Fly to data center ─────────────────────────────────────────────────────
+function flyToData(data) {
+    const lats = data.talleres.map(t => t.lat);
+    const lons = data.talleres.map(t => t.lon);
+    if (!lats.length) return;
+    const cLat = lats.reduce((a, b) => a + b) / lats.length;
+    const cLon = lons.reduce((a, b) => a + b) / lons.length;
+    defaultCenter = { lat: cLat, lon: cLon, zoom: 4.7 };
+    deckgl.setProps({
+        initialViewState: {
+            longitude: cLon, latitude: cLat,
+            zoom: 4.7, pitch: 45, bearing: 0,
+            transitionDuration: 1800,
+            transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+        },
+    });
+}
+
+// ── Custom tooltip ─────────────────────────────────────────────────────────
+function showTooltip(info, totalUnits) {
+    const el = document.getElementById('deck-tooltip');
+    if (!info.object) { el.style.display = 'none'; return; }
+    const obj = info.object;
+    document.getElementById('tt-nombre').textContent   = obj.taller_nombre || '—';
+    document.getElementById('tt-asignadas').textContent = fmt(obj.asignadas);
+    const p = totalUnits ? ((obj.asignadas / totalUnits) * 100).toFixed(1) : '—';
+    document.getElementById('tt-pct').textContent = `${p}%`;
+    el.style.display = 'block';
+    el.style.left    = (info.x + 18) + 'px';
+    el.style.top     = (info.y - 100) + 'px';
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+function zoomIn() {
+    deckgl.setProps({
+        initialViewState: { ...viewState, zoom: viewState.zoom + 1, transitionDuration: 400 },
+    });
+}
+function zoomOut() {
+    deckgl.setProps({
+        initialViewState: { ...viewState, zoom: Math.max(1, viewState.zoom - 1), transitionDuration: 400 },
+    });
+}
+function resetView() {
+    deckgl.setProps({
+        initialViewState: {
+            longitude: defaultCenter.lon, latitude: defaultCenter.lat,
+            zoom: defaultCenter.zoom, pitch: pitch3d ? 45 : 0, bearing: 0,
+            transitionDuration: 1200,
+        },
+    });
+}
+function togglePitch() {
+    pitch3d = !pitch3d;
+    document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
+    document.getElementById('chk-3d').checked = pitch3d;
+    deckgl.setProps({
+        initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 },
+    });
+    renderLayers();
+}
+function toggle3D() {
+    pitch3d = document.getElementById('chk-3d').checked;
+    document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
+    deckgl.setProps({
+        initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 },
+    });
+    renderLayers();
+}
+function toggleLayer(name) {
+    layerState[name] = !layerState[name];
+    renderLayers();
+}
+function onRadiusChange(val) {
+    hexRadius = parseInt(val, 10);
+    document.getElementById('kpi-radius').textContent = Number(hexRadius).toLocaleString('es-CL');
+    renderLayers();
+}
+
+// ── Nav ────────────────────────────────────────────────────────────────────
+function setPage(page, el) {
+    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+    // Future: route to other views
+}
+
+// ── Report download ────────────────────────────────────────────────────────
+function downloadReport() {
+    if (!appData || !appData.talleres) return;
+    const rows = appData.talleres.map(t =>
+        `${t.taller_nombre},${t.asignadas},${t.pct}%,${t.radius_km}`
+    );
+    const csv = 'Taller,Unidades Asignadas,% Flota,Radio (km)\n' + rows.join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = `reporte_talleres_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+}
+
+// ── Pulse animation keyframe ───────────────────────────────────────────────
+const style = document.createElement('style');
+style.textContent = `@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`;
+document.head.appendChild(style);
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', initDeck);
+</script>
+</body>
+</html>
