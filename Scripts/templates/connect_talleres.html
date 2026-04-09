@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Connect Talleres | Kaufmann Intelligence</title>
+<title>Fleet Intelligence | Kaufmann</title>
 
 <!-- Tailwind CSS -->
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -16,8 +16,11 @@
 <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
 
-<!-- deck.gl standalone (includes all layers + mapbox overlay) -->
+<!-- deck.gl standalone -->
 <script src="https://unpkg.com/deck.gl@9/dist.min.js"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 
 <script>
 tailwind.config = {
@@ -25,24 +28,24 @@ tailwind.config = {
     theme: {
         extend: {
             colors: {
-                "primary":                 "#f2be8c",
-                "on-primary":              "#482904",
-                "primary-dim":             "#d4a373",
-                "surface":                 "#131313",
-                "surface-dim":             "#0e0e0e",
-                "surface-container-low":   "#1c1b1b",
-                "surface-container":       "#201f1f",
-                "surface-container-high":  "#2a2a2a",
+                "primary":                  "#f2be8c",
+                "on-primary":               "#482904",
+                "primary-dim":              "#d4a373",
+                "surface":                  "#131313",
+                "surface-dim":              "#0e0e0e",
+                "surface-container-low":    "#1c1b1b",
+                "surface-container":        "#201f1f",
+                "surface-container-high":   "#2a2a2a",
                 "surface-container-highest":"#353534",
-                "surface-variant":         "#353534",
-                "surface-bright":          "#3a3939",
-                "on-surface":              "#e5e2e1",
-                "on-surface-variant":      "#d4c4b7",
-                "on-surface-dim":          "#9c8e82",
-                "outline":                 "#9c8e82",
-                "outline-variant":         "#50453b",
-                "tertiary":                "#a7ccea",
-                "background":              "#131313",
+                "surface-variant":          "#353534",
+                "surface-bright":           "#3a3939",
+                "on-surface":               "#e5e2e1",
+                "on-surface-variant":       "#d4c4b7",
+                "on-surface-dim":           "#9c8e82",
+                "outline":                  "#9c8e82",
+                "outline-variant":          "#50453b",
+                "tertiary":                 "#a7ccea",
+                "background":               "#131313",
             },
         },
     },
@@ -99,6 +102,42 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
     position: absolute; pointer-events: none; z-index: 50; display: none;
     font-family: 'Manrope', sans-serif;
 }
+
+/* ── Page panels ── */
+.page-panel { display: none; position: absolute; inset: 0; }
+#page-mapa.active { display: flex; flex-direction: column; }
+.page-panel.active:not(#page-mapa) { display: block; overflow-y: auto; }
+
+/* ── Data table ── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table thead tr { background: #0e0e0e; }
+.data-table thead th { padding: 10px 14px; text-align: left; font-size: 10px;
+                        font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+                        color: rgba(229,226,225,0.4); border-bottom: 1px solid rgba(53,53,52,0.6); }
+.data-table tbody tr:nth-child(even) { background: rgba(28,27,27,0.7); }
+.data-table tbody tr:hover { background: rgba(42,42,42,0.8) !important; }
+.data-table tbody td { padding: 9px 14px; border-bottom: 1px solid rgba(53,53,52,0.25);
+                        color: rgba(229,226,225,0.8); white-space: nowrap; }
+
+/* ── Form controls ── */
+select, input[type="text"], input[type="search"] {
+    background: #201f1f; border: 1px solid rgba(53,53,52,0.6);
+    border-radius: 6px; padding: 8px 12px; color: #e5e2e1;
+    font-family: 'Manrope', sans-serif; font-size: 13px; outline: none;
+    width: 100%; transition: border-color .18s;
+}
+select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
+
+/* ── Section card ── */
+.section-card { background: #1c1b1b; border: 1px solid rgba(53,53,52,0.3);
+                border-radius: 12px; padding: 20px 24px; }
+
+/* ── Loading spinner ── */
+.loading-state { display: flex; align-items: center; justify-content: center;
+                  height: 240px; color: rgba(229,226,225,0.2);
+                  font-size: 12px; font-family: monospace; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.animate-pulse { animation: pulse 1.8s infinite; }
 </style>
 </head>
 
@@ -191,7 +230,8 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
                    bg-[#131313]/90 backdrop-blur-md border-b border-[#353534]/20
                    shadow-xl shadow-[#f2be8c]/[0.03]">
         <div class="flex items-center gap-5">
-            <h1 class="serif text-2xl font-black text-[#f2be8c] tracking-tight">Connect Talleres</h1>
+            <h1 class="serif text-2xl font-black text-[#f2be8c] tracking-tight"
+                id="page-title">Connect Talleres</h1>
             <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full
                         bg-[#2a2a2a] border border-[#50453b]/30">
                 <span class="w-2 h-2 rounded-full bg-green-500" style="animation:pulse 2s infinite"></span>
@@ -215,225 +255,391 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
         </div>
     </header>
 
-    <!-- ── KPI Strip ── -->
-    <section class="flex-shrink-0 flex gap-3 px-6 py-4 bg-[#1c1b1b] border-b border-[#353534]/20
-                    overflow-x-auto" style="scrollbar-width:thin">
-        <div class="kpi-card">
-            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
-                Unidades únicas snapshot
-            </div>
-            <div class="flex items-baseline gap-2">
-                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-units">—</span>
-            </div>
-        </div>
-        <div class="kpi-card">
-            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
-                Unidades en hexbin
-            </div>
-            <div class="flex items-baseline gap-2">
-                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-hexbin">—</span>
-            </div>
-        </div>
-        <div class="kpi-card border-l-2 border-[#f2be8c]/20">
-            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
-                Hex radius (m)
-            </div>
-            <div class="flex items-baseline gap-2">
-                <span class="serif text-2xl font-bold text-[#a7ccea]" id="kpi-radius">5,000</span>
-                <input type="range" min="500" max="20000" step="500" value="5000"
-                       id="radius-slider" oninput="onRadiusChange(this.value)"
-                       class="w-20 accent-[#a7ccea] cursor-pointer"/>
-            </div>
-        </div>
-        <div class="kpi-card">
-            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
-                % Dentro del radio
-            </div>
-            <div class="flex items-baseline gap-2">
-                <span class="serif text-2xl font-bold text-green-400" id="kpi-pct">—</span>
-            </div>
-        </div>
-        <div class="kpi-card">
-            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
-                Talleres activos
-            </div>
-            <div class="flex items-baseline gap-2">
-                <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-talleres">—</span>
-            </div>
-        </div>
-    </section>
-
-    <!-- ── Map viewport ── -->
+    <!-- ── Content Area (pages switch here) ── -->
     <div class="flex-1 relative overflow-hidden">
 
-        <!-- deck.gl canvas target -->
-        <div id="deck-container"></div>
+        <!-- ══════════════════════════════════
+             PAGE: MAPA (Connect Talleres)
+        ══════════════════════════════════ -->
+        <div id="page-mapa" class="page-panel active">
 
-        <!-- Custom tooltip -->
-        <div id="deck-tooltip">
-            <div class="glass bg-[#131313]/80 border border-white/[0.08] rounded-xl p-4 shadow-2xl"
-                 style="min-width:220px">
-                <div class="serif text-[#f2be8c] font-bold text-sm mb-0.5" id="tt-nombre">—</div>
-                <div class="text-[10px] text-[#e5e2e1]/35 uppercase tracking-[0.12em] mb-3">
-                    Sucursal Kaufmann
-                </div>
-                <div class="flex gap-5">
-                    <div>
-                        <div class="serif text-2xl font-bold text-[#e5e2e1]" id="tt-asignadas">—</div>
-                        <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">unidades asignadas</div>
+            <!-- KPI Strip -->
+            <section class="flex-shrink-0 flex gap-3 px-6 py-4 bg-[#1c1b1b] border-b border-[#353534]/20
+                            overflow-x-auto" style="scrollbar-width:thin">
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Unidades únicas snapshot
                     </div>
-                    <div class="border-l border-[#353534] pl-5">
-                        <div class="serif text-2xl font-bold text-[#a7ccea]" id="tt-pct">—</div>
-                        <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">de la flota</div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-units">—</span>
                     </div>
                 </div>
-            </div>
-        </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Unidades en hexbin
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-hexbin">—</span>
+                    </div>
+                </div>
+                <div class="kpi-card border-l-2 border-[#f2be8c]/20">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Hex radius (m)
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#a7ccea]" id="kpi-radius">5,000</span>
+                        <input type="range" min="500" max="20000" step="500" value="5000"
+                               id="radius-slider" oninput="onRadiusChange(this.value)"
+                               class="w-20 accent-[#a7ccea] cursor-pointer"/>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        % Dentro del radio
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-green-400" id="kpi-pct">—</span>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Talleres activos
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-talleres">—</span>
+                    </div>
+                </div>
+            </section>
 
-        <!-- ── Floating KPI panel (top-left) ── -->
-        <div class="absolute top-5 left-5 z-30" style="width:240px">
-            <div class="glass bg-[#131313]/78 border border-white/[0.06] rounded-xl p-5 shadow-2xl relative">
-                <div id="fl-loading"
-                     class="absolute inset-0 rounded-xl flex items-center justify-center z-10"
-                     style="background:rgba(19,19,19,0.65)">
-                    <div class="text-[10px] text-[#e5e2e1]/30 font-mono" style="animation:pulse 1.5s infinite">
-                        Cargando datos...
-                    </div>
-                </div>
-                <h3 class="serif text-[#f2be8c] font-bold text-base mb-4">Métricas Críticas</h3>
-                <div class="space-y-2.5">
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs text-[#e5e2e1]/45">Unidades en Cobertura</span>
-                        <span class="font-bold text-sm" id="fl-units">—</span>
-                    </div>
-                    <div class="h-px" style="background:rgba(53,53,52,0.6)"></div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs text-[#e5e2e1]/45">Talleres Activos</span>
-                        <span class="font-bold text-sm text-[#f2be8c]" id="fl-talleres">—</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs text-[#e5e2e1]/45">% Dentro del Radio</span>
-                        <span class="font-bold text-sm" id="fl-pct">—</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-xs text-[#e5e2e1]/45">Mayor Carga</span>
-                        <div class="text-right">
-                            <div class="font-bold text-sm" id="fl-top-n">—</div>
-                            <div class="text-[9px] text-[#f2be8c]/55">unidades</div>
+            <!-- Map viewport -->
+            <div class="flex-1 relative overflow-hidden">
+
+                <!-- deck.gl canvas -->
+                <div id="deck-container"></div>
+
+                <!-- Custom tooltip -->
+                <div id="deck-tooltip">
+                    <div class="glass bg-[#131313]/80 border border-white/[0.08] rounded-xl p-4 shadow-2xl"
+                         style="min-width:220px">
+                        <div class="serif text-[#f2be8c] font-bold text-sm mb-0.5" id="tt-nombre">—</div>
+                        <div class="text-[10px] text-[#e5e2e1]/35 uppercase tracking-[0.12em] mb-3">
+                            Sucursal Kaufmann
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Legend (bottom-left) ── -->
-        <div class="absolute z-30" style="bottom:140px;left:20px">
-            <div class="glass bg-[#1c1b1b]/88 border border-white/[0.05] p-4 rounded-lg">
-                <div class="text-[9px] text-[#e5e2e1]/40 font-bold tracking-[0.18em] uppercase mb-2">
-                    Densidad de Unidades
-                </div>
-                <div class="flex items-center gap-1 mb-1.5">
-                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.15)"></div>
-                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.40)"></div>
-                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.72)"></div>
-                    <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,1.00)"></div>
-                </div>
-                <div class="flex justify-between text-[8px] text-[#e5e2e1]/25 uppercase tracking-wide">
-                    <span>Baja</span><span>Crítica</span>
-                </div>
-                <!-- layer toggles -->
-                <div class="mt-3 pt-3 space-y-1.5" style="border-top:1px solid rgba(53,53,52,0.6)">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="chk-coverage" checked
-                               onchange="toggleLayer('coverage')"
-                               class="accent-[#f2be8c] w-3 h-3"/>
-                        <span class="text-[10px] text-[#e5e2e1]/50">Radio 100 km</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="chk-labels"
-                               onchange="toggleLayer('labels')"
-                               class="accent-[#f2be8c] w-3 h-3"/>
-                        <span class="text-[10px] text-[#e5e2e1]/50">Etiquetas talleres</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="chk-3d" checked
-                               onchange="toggle3D()"
-                               class="accent-[#f2be8c] w-3 h-3"/>
-                        <span class="text-[10px] text-[#e5e2e1]/50">Vista 3D</span>
-                    </label>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Tool panel (top-right) ── -->
-        <div class="absolute top-5 right-5 z-30 flex flex-col gap-2">
-            <button class="tool-btn" onclick="zoomIn()" title="Acercar">
-                <span class="icon">add</span>
-            </button>
-            <button class="tool-btn" onclick="zoomOut()" title="Alejar">
-                <span class="icon">remove</span>
-            </button>
-            <button class="tool-btn" onclick="resetView()" title="Vista inicial">
-                <span class="icon">center_focus_strong</span>
-            </button>
-            <div style="height:4px"></div>
-            <button class="tool-btn" onclick="togglePitch()" title="Rotar vista" id="btn-pitch">
-                <span class="icon">3d_rotation</span>
-            </button>
-        </div>
-
-        <!-- ── Timeline / Player (bottom) ── -->
-        <div class="absolute bottom-0 left-0 right-0 z-30
-                    glass bg-[#1c1b1b]/92 border-t border-[#353534]/20 py-5 px-10">
-            <div class="max-w-4xl mx-auto flex flex-col gap-3">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-4">
-                        <button class="w-10 h-10 rounded-full flex items-center justify-center
-                                       transition-colors hover:bg-[#f0bd8b] active:scale-90"
-                                style="background:#f2be8c">
-                            <span class="icon icon-fill text-[#482904]">play_arrow</span>
-                        </button>
-                        <div>
-                            <div class="serif text-sm font-bold text-[#f2be8c]" id="timeline-date">—</div>
-                            <div class="text-[10px] font-mono text-[#e5e2e1]/35" id="timeline-time">
-                                Último snapshot
+                        <div class="flex gap-5">
+                            <div>
+                                <div class="serif text-2xl font-bold text-[#e5e2e1]" id="tt-asignadas">—</div>
+                                <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">unidades asignadas</div>
+                            </div>
+                            <div class="border-l border-[#353534] pl-5">
+                                <div class="serif text-2xl font-bold text-[#a7ccea]" id="tt-pct">—</div>
+                                <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">de la flota</div>
                             </div>
                         </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
-                                       text-[#f2be8c] bg-[#353534]">
-                            LIVE
-                        </button>
-                        <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
-                                       text-[#e5e2e1]/35 bg-[#201f1f] hover:text-[#f2be8c] transition-colors">
-                            HISTORIAL
-                        </button>
+                </div>
+
+                <!-- Floating KPI panel (top-left) -->
+                <div class="absolute top-5 left-5 z-30" style="width:240px">
+                    <div class="glass bg-[#131313]/78 border border-white/[0.06] rounded-xl p-5 shadow-2xl relative">
+                        <div id="fl-loading"
+                             class="absolute inset-0 rounded-xl flex items-center justify-center z-10"
+                             style="background:rgba(19,19,19,0.65)">
+                            <div class="text-[10px] text-[#e5e2e1]/30 font-mono animate-pulse">
+                                Cargando datos...
+                            </div>
+                        </div>
+                        <h3 class="serif text-[#f2be8c] font-bold text-base mb-4">Métricas Críticas</h3>
+                        <div class="space-y-2.5">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Unidades en Cobertura</span>
+                                <span class="font-bold text-sm" id="fl-units">—</span>
+                            </div>
+                            <div class="h-px" style="background:rgba(53,53,52,0.6)"></div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Talleres Activos</span>
+                                <span class="font-bold text-sm text-[#f2be8c]" id="fl-talleres">—</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">% Dentro del Radio</span>
+                                <span class="font-bold text-sm" id="fl-pct">—</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Mayor Carga</span>
+                                <div class="text-right">
+                                    <div class="font-bold text-sm" id="fl-top-n">—</div>
+                                    <div class="text-[9px] text-[#f2be8c]/55">unidades</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <!-- Timeline track -->
-                <div class="relative w-full">
-                    <div class="w-full h-1.5 rounded-full" style="background:#353534">
-                        <div class="h-full rounded-full transition-all duration-500"
-                             style="width:75%;background:#f2be8c" id="timeline-bar"></div>
+
+                <!-- Legend (bottom-left) -->
+                <div class="absolute z-30" style="bottom:140px;left:20px">
+                    <div class="glass bg-[#1c1b1b]/88 border border-white/[0.05] p-4 rounded-lg">
+                        <div class="text-[9px] text-[#e5e2e1]/40 font-bold tracking-[0.18em] uppercase mb-2">
+                            Densidad de Unidades
+                        </div>
+                        <div class="flex items-center gap-1 mb-1.5">
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.15)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.40)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.72)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,1.00)"></div>
+                        </div>
+                        <div class="flex justify-between text-[8px] text-[#e5e2e1]/25 uppercase tracking-wide">
+                            <span>Baja</span><span>Crítica</span>
+                        </div>
+                        <div class="mt-3 pt-3 space-y-1.5" style="border-top:1px solid rgba(53,53,52,0.6)">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-coverage" checked
+                                       onchange="toggleLayer('coverage')"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Radio 100 km</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-labels"
+                                       onchange="toggleLayer('labels')"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Etiquetas talleres</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-3d" checked
+                                       onchange="toggle3D()"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Vista 3D</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full cursor-pointer
-                                border-4 border-[#1c1b1b]"
-                         style="left:75%;transform:translate(-50%,-50%);background:#f2be8c;
-                                box-shadow:0 0 12px rgba(242,190,140,0.4)"
-                         id="timeline-thumb"></div>
-                    <div class="flex justify-between mt-4 text-[9px] font-bold tracking-[0.12em]
-                                text-[#e5e2e1]/20 uppercase">
-                        <span>00:00</span><span>04:00</span><span>08:00</span>
-                        <span style="color:rgba(242,190,140,0.6)">12:00</span>
-                        <span>16:00</span><span>20:00</span><span>23:59</span>
+                </div>
+
+                <!-- Tool panel (top-right) -->
+                <div class="absolute top-5 right-5 z-30 flex flex-col gap-2">
+                    <button class="tool-btn" onclick="zoomIn()" title="Acercar">
+                        <span class="icon">add</span>
+                    </button>
+                    <button class="tool-btn" onclick="zoomOut()" title="Alejar">
+                        <span class="icon">remove</span>
+                    </button>
+                    <button class="tool-btn" onclick="resetView()" title="Vista inicial">
+                        <span class="icon">center_focus_strong</span>
+                    </button>
+                    <div style="height:4px"></div>
+                    <button class="tool-btn" onclick="togglePitch()" title="Rotar vista" id="btn-pitch">
+                        <span class="icon">3d_rotation</span>
+                    </button>
+                </div>
+
+                <!-- Timeline / Player (bottom) -->
+                <div class="absolute bottom-0 left-0 right-0 z-30
+                            glass bg-[#1c1b1b]/92 border-t border-[#353534]/20 py-5 px-10">
+                    <div class="max-w-4xl mx-auto flex flex-col gap-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-4">
+                                <button class="w-10 h-10 rounded-full flex items-center justify-center
+                                               transition-colors hover:bg-[#f0bd8b] active:scale-90"
+                                        style="background:#f2be8c">
+                                    <span class="icon icon-fill text-[#482904]">play_arrow</span>
+                                </button>
+                                <div>
+                                    <div class="serif text-sm font-bold text-[#f2be8c]" id="timeline-date">—</div>
+                                    <div class="text-[10px] font-mono text-[#e5e2e1]/35" id="timeline-time">
+                                        Último snapshot
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
+                                               text-[#f2be8c] bg-[#353534]">LIVE</button>
+                                <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
+                                               text-[#e5e2e1]/35 bg-[#201f1f] hover:text-[#f2be8c] transition-colors">
+                                    HISTORIAL
+                                </button>
+                            </div>
+                        </div>
+                        <div class="relative w-full">
+                            <div class="w-full h-1.5 rounded-full" style="background:#353534">
+                                <div class="h-full rounded-full transition-all duration-500"
+                                     style="width:75%;background:#f2be8c" id="timeline-bar"></div>
+                            </div>
+                            <div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full cursor-pointer
+                                        border-4 border-[#1c1b1b]"
+                                 style="left:75%;transform:translate(-50%,-50%);background:#f2be8c;
+                                        box-shadow:0 0 12px rgba(242,190,140,0.4)"
+                                 id="timeline-thumb"></div>
+                            <div class="flex justify-between mt-4 text-[9px] font-bold tracking-[0.12em]
+                                        text-[#e5e2e1]/20 uppercase">
+                                <span>00:00</span><span>04:00</span><span>08:00</span>
+                                <span style="color:rgba(242,190,140,0.6)">12:00</span>
+                                <span>16:00</span><span>20:00</span><span>23:59</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- end map viewport -->
+        </div><!-- end page-mapa -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: VISTA EJECUTIVA
+        ══════════════════════════════════ -->
+        <div id="page-ejecutivo" class="page-panel">
+            <div class="p-6 max-w-7xl mx-auto w-full">
+
+                <div id="ej-loading" class="loading-state animate-pulse">Cargando datos...</div>
+
+                <div id="ej-content" style="display:none">
+                    <!-- Charts row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="section-card">
+                            <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                                Unidades asignadas por taller
+                            </div>
+                            <div style="height:380px; position:relative;">
+                                <canvas id="chart-bar-talleres"></canvas>
+                            </div>
+                        </div>
+                        <div class="section-card">
+                            <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                                Cobertura radio de talleres
+                            </div>
+                            <div style="height:380px; position:relative;">
+                                <canvas id="chart-pie-cobertura"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Top distancia chart -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Top 10 talleres por distancia promedio
+                        </div>
+                        <div style="height:280px; position:relative;">
+                            <canvas id="chart-bar-dist"></canvas>
+                        </div>
+                    </div>
+                    <!-- Table -->
+                    <div class="section-card">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Resumen por taller
+                        </div>
+                        <div id="ej-table" class="overflow-x-auto"></div>
                     </div>
                 </div>
             </div>
-        </div>
+        </div><!-- end page-ejecutivo -->
 
-    </div><!-- end map viewport -->
+
+        <!-- ══════════════════════════════════
+             PAGE: DETALLE UNIDADES
+        ══════════════════════════════════ -->
+        <div id="page-detalle" class="page-panel">
+            <div class="p-6 max-w-7xl mx-auto w-full">
+
+                <!-- Filters -->
+                <div class="section-card mb-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Taller
+                            </label>
+                            <select id="det-taller" onchange="applyDetalleFilter()">
+                                <option value="">Todos los talleres</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Empresa
+                            </label>
+                            <select id="det-empresa" onchange="applyDetalleFilter()">
+                                <option value="">Todas las empresas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Buscar VIN / Patente
+                            </label>
+                            <input type="text" id="det-q" placeholder="Ej: ABCD12"
+                                   oninput="applyDetalleFilterDebounced()"/>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Dist. máx: <span id="det-dist-label" class="text-[#a7ccea]">sin límite</span>
+                            </label>
+                            <input type="range" min="0" max="1000" step="10" value="1000"
+                                   id="det-dist" oninput="applyDetalleFilterDebounced()"
+                                   class="w-full accent-[#a7ccea] cursor-pointer mt-2"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info bar -->
+                <div class="flex items-center justify-between mb-4">
+                    <p id="det-info" class="text-xs text-[#e5e2e1]/35 font-mono">—</p>
+                    <a href="/api/export/detalle"
+                       class="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase flex items-center gap-2
+                              transition-all active:scale-95"
+                       style="background:#f2be8c; color:#482904;">
+                        <span class="icon" style="font-size:15px;">download</span>
+                        Descargar CSV completo
+                    </a>
+                </div>
+
+                <div id="det-loading" class="loading-state animate-pulse">Cargando datos...</div>
+                <div id="det-table" class="section-card overflow-x-auto" style="display:none; padding:0;"></div>
+            </div>
+        </div><!-- end page-detalle -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: TENDENCIA SEMANAL
+        ══════════════════════════════════ -->
+        <div id="page-tendencia" class="page-panel">
+            <div class="p-6 max-w-7xl mx-auto w-full">
+
+                <div id="tend-loading" class="loading-state animate-pulse">Cargando datos...</div>
+
+                <div id="tend-content" style="display:none">
+                    <!-- Taller selector -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-3">Talleres a comparar</div>
+                        <div id="tend-checks" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <!-- Line chart -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Unidades únicas por taller — tendencia semanal
+                        </div>
+                        <div style="height:380px; position:relative;">
+                            <canvas id="chart-tendencia"></canvas>
+                        </div>
+                    </div>
+                    <!-- Table -->
+                    <div class="section-card">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">Tabla semanal</div>
+                        <div id="tend-table" class="overflow-x-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end page-tendencia -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: REPORTES
+        ══════════════════════════════════ -->
+        <div id="page-reportes" class="page-panel">
+            <div class="p-6 max-w-4xl mx-auto w-full">
+                <p id="rep-snap-ts" class="text-xs text-[#e5e2e1]/35 mb-6 font-mono">
+                    Datos del último snapshot
+                </p>
+                <div class="space-y-4" id="rep-cards">
+                    <!-- Cards rendered by JS -->
+                </div>
+            </div>
+        </div><!-- end page-reportes -->
+
+    </div><!-- end content area -->
 </main>
+
 
 <!-- ════════════════════════════════════════════════
      JAVASCRIPT
@@ -441,7 +647,42 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
 <script>
 'use strict';
 
-// ── State ─────────────────────────────────────────────────────────────────
+// ── Chart.js global defaults ───────────────────────────────────────────────
+Chart.defaults.color           = 'rgba(229,226,225,0.45)';
+Chart.defaults.borderColor     = 'rgba(53,53,52,0.45)';
+Chart.defaults.font.family     = 'Manrope';
+Chart.defaults.font.size       = 12;
+
+// ── Page titles ───────────────────────────────────────────────────────────
+const PAGE_TITLES = {
+    mapa:       'Connect Talleres',
+    ejecutivo:  'Vista Ejecutiva',
+    detalle:    'Detalle Unidades',
+    tendencia:  'Tendencia Semanal',
+    reportes:   'Reportes',
+};
+
+// ── Page routing ──────────────────────────────────────────────────────────
+const _loaded = {};
+
+function setPage(page, el) {
+    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+    document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    if (!_loaded[page]) {
+        _loaded[page] = true;
+        if (page === 'ejecutivo') loadEjecutivo();
+        if (page === 'detalle')   loadDetalle({});
+        if (page === 'tendencia') loadTendencia();
+        if (page === 'reportes')  renderReportes();
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAP (Connect Talleres)
+// ═══════════════════════════════════════════════════════
 let deckgl        = null;
 let appData       = null;
 let hexRadius     = 5000;
@@ -451,7 +692,6 @@ let defaultCenter = { lat: -33.45, lon: -70.65, zoom: 4.7 };
 let viewState     = { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
                       zoom: defaultCenter.zoom, pitch: 45, bearing: 0 };
 
-// Gold color ramp for HexagonLayer
 const HEX_COLORS = [
     [242, 190, 140,  45],
     [242, 190, 140, 105],
@@ -461,7 +701,6 @@ const HEX_COLORS = [
     [155,  65,  10, 255],
 ];
 
-// ── Init deck.gl ───────────────────────────────────────────────────────────
 function initDeck() {
     deckgl = new deck.DeckGL({
         container: 'deck-container',
@@ -471,19 +710,18 @@ function initDeck() {
         controller: true,
         layers: [],
         onViewStateChange: ({ viewState: vs }) => { viewState = vs; },
-        onLoad: loadData,
-        getTooltip: null,   // using custom tooltip div
+        onLoad: loadMapData,
+        getTooltip: null,
     });
 }
 
-// ── Load data from Flask API ───────────────────────────────────────────────
-function loadData() {
+function loadMapData() {
     fetch('/api/data')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => {
             if (data.error) throw new Error(data.error);
             appData = data;
-            updateKPIs(data);
+            updateMapKPIs(data);
             renderLayers();
             flyToData(data);
             document.getElementById('fl-loading').style.display = 'none';
@@ -491,34 +729,29 @@ function loadData() {
         .catch(err => {
             const el = document.getElementById('fl-loading');
             el.innerHTML = `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">
-                Error: ${err.message}</div>`;
+                Error al cargar datos:<br>${err.message}</div>`;
         });
 }
 
-// ── KPI updates ───────────────────────────────────────────────────────────
-function fmt(n) { return n != null ? Number(n).toLocaleString('es-CL') : '—'; }
-function pct(p) { return p != null ? `${p}%` : '—'; }
+function fmt(n)  { return n != null ? Number(n).toLocaleString('es-CL') : '—'; }
+function pct(p)  { return p != null ? `${p}%` : '—'; }
+function fmtDec(n, d=1) { return n != null ? Number(n).toFixed(d) : '—'; }
 
-function updateKPIs(data) {
+function updateMapKPIs(data) {
     const k = data.kpis;
-    // Strip
     document.getElementById('kpi-units').textContent    = fmt(k.total_units);
     document.getElementById('kpi-hexbin').textContent   = fmt(k.hex_points);
     document.getElementById('kpi-pct').textContent      = pct(k.pct_dentro);
     document.getElementById('kpi-talleres').textContent = fmt(k.total_talleres);
-    // Floating panel
     document.getElementById('fl-units').textContent     = fmt(k.total_units);
     document.getElementById('fl-talleres').textContent  = fmt(k.total_talleres);
     document.getElementById('fl-pct').textContent       = pct(k.pct_dentro);
     document.getElementById('fl-top-n').textContent     = fmt(k.top_taller_n);
-    // Sidebar
     document.getElementById('sb-talleres').textContent  = fmt(k.total_talleres);
     document.getElementById('sb-pct').textContent       = pct(k.pct_dentro);
     document.getElementById('sb-top-n').textContent     = fmt(k.top_taller_n);
     document.getElementById('sb-top-name').textContent  = k.top_taller || '—';
-    // Header
     document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
-    // Timeline
     if (data.snap_ts) {
         const [d, t] = data.snap_ts.split('T');
         document.getElementById('timeline-date').textContent = d || data.snap_ts;
@@ -526,72 +759,44 @@ function updateKPIs(data) {
     }
 }
 
-// ── Build deck.gl layers ──────────────────────────────────────────────────
 function buildLayers(data) {
     const totalUnits = data.kpis.total_units || 1;
     const layers = [];
 
-    // 1 — HexagonLayer (unit density)
     layers.push(new deck.HexagonLayer({
-        id: 'hex-density',
-        data: data.units,
+        id: 'hex-density', data: data.units,
         getPosition: d => [d.lon, d.lat],
-        radius: hexRadius,
-        elevationScale: 25,
-        elevationRange: [0, 2500],
-        extruded: pitch3d,
-        pickable: false,
-        opacity: 0.75,
-        coverage: 0.88,
+        radius: hexRadius, elevationScale: 25, elevationRange: [0, 2500],
+        extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
         colorRange: HEX_COLORS,
     }));
 
-    // 2 — Coverage radius circles (togglable)
     if (layerState.coverage) {
         layers.push(new deck.ScatterplotLayer({
-            id: 'taller-coverage',
-            data: data.talleres,
+            id: 'taller-coverage', data: data.talleres,
             getPosition: d => [d.lon, d.lat],
             getRadius: d => (d.radius_km || 100) * 1000,
-            getFillColor: [242, 190, 140, 10],
-            getLineColor: [242, 190, 140, 70],
-            stroked: true,
-            filled: true,
-            lineWidthMinPixels: 1,
-            pickable: false,
+            getFillColor: [242, 190, 140, 10], getLineColor: [242, 190, 140, 70],
+            stroked: true, filled: true, lineWidthMinPixels: 1, pickable: false,
         }));
     }
 
-    // 3 — Taller dots
     layers.push(new deck.ScatterplotLayer({
-        id: 'talleres-dots',
-        data: data.talleres,
-        getPosition: d => [d.lon, d.lat],
-        getRadius: 4200,
-        getFillColor: [242, 190, 140, 235],
-        getLineColor: [255, 255, 255, 200],
-        lineWidthMinPixels: 2,
-        stroked: true,
-        pickable: true,
-        autoHighlight: true,
-        highlightColor: [255, 255, 255, 60],
+        id: 'talleres-dots', data: data.talleres,
+        getPosition: d => [d.lon, d.lat], getRadius: 4200,
+        getFillColor: [242, 190, 140, 235], getLineColor: [255, 255, 255, 200],
+        lineWidthMinPixels: 2, stroked: true, pickable: true,
+        autoHighlight: true, highlightColor: [255, 255, 255, 60],
         onHover: info => showTooltip(info, totalUnits),
     }));
 
-    // 4 — Taller labels (togglable)
     if (layerState.labels) {
         layers.push(new deck.TextLayer({
-            id: 'taller-labels',
-            data: data.talleres,
-            getPosition: d => [d.lon, d.lat],
-            getText: d => d.taller_nombre,
-            getSize: 13,
-            getColor: [242, 190, 140, 255],
-            getTextAnchor: 'middle',
-            getAlignmentBaseline: 'bottom',
-            getPixelOffset: [0, -52],
-            billboard: true,
-            pickable: false,
+            id: 'taller-labels', data: data.talleres,
+            getPosition: d => [d.lon, d.lat], getText: d => d.taller_nombre,
+            getSize: 13, getColor: [242, 190, 140, 255],
+            getTextAnchor: 'middle', getAlignmentBaseline: 'bottom',
+            getPixelOffset: [0, -52], billboard: true, pickable: false,
         }));
     }
 
@@ -603,7 +808,6 @@ function renderLayers() {
     deckgl.setProps({ layers: buildLayers(appData) });
 }
 
-// ── Fly to data center ─────────────────────────────────────────────────────
 function flyToData(data) {
     const lats = data.talleres.map(t => t.lat);
     const lons = data.talleres.map(t => t.lon);
@@ -613,20 +817,18 @@ function flyToData(data) {
     defaultCenter = { lat: cLat, lon: cLon, zoom: 4.7 };
     deckgl.setProps({
         initialViewState: {
-            longitude: cLon, latitude: cLat,
-            zoom: 4.7, pitch: 45, bearing: 0,
+            longitude: cLon, latitude: cLat, zoom: 4.7, pitch: 45, bearing: 0,
             transitionDuration: 1800,
             transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
         },
     });
 }
 
-// ── Custom tooltip ─────────────────────────────────────────────────────────
 function showTooltip(info, totalUnits) {
     const el = document.getElementById('deck-tooltip');
     if (!info.object) { el.style.display = 'none'; return; }
     const obj = info.object;
-    document.getElementById('tt-nombre').textContent   = obj.taller_nombre || '—';
+    document.getElementById('tt-nombre').textContent    = obj.taller_nombre || '—';
     document.getElementById('tt-asignadas').textContent = fmt(obj.asignadas);
     const p = totalUnits ? ((obj.asignadas / totalUnits) * 100).toFixed(1) : '—';
     document.getElementById('tt-pct').textContent = `${p}%`;
@@ -635,66 +837,34 @@ function showTooltip(info, totalUnits) {
     el.style.top     = (info.y - 100) + 'px';
 }
 
-// ── Controls ───────────────────────────────────────────────────────────────
-function zoomIn() {
-    deckgl.setProps({
-        initialViewState: { ...viewState, zoom: viewState.zoom + 1, transitionDuration: 400 },
-    });
-}
-function zoomOut() {
-    deckgl.setProps({
-        initialViewState: { ...viewState, zoom: Math.max(1, viewState.zoom - 1), transitionDuration: 400 },
-    });
-}
+function zoomIn()  { deckgl.setProps({ initialViewState: { ...viewState, zoom: viewState.zoom + 1, transitionDuration: 400 } }); }
+function zoomOut() { deckgl.setProps({ initialViewState: { ...viewState, zoom: Math.max(1, viewState.zoom - 1), transitionDuration: 400 } }); }
 function resetView() {
-    deckgl.setProps({
-        initialViewState: {
-            longitude: defaultCenter.lon, latitude: defaultCenter.lat,
-            zoom: defaultCenter.zoom, pitch: pitch3d ? 45 : 0, bearing: 0,
-            transitionDuration: 1200,
-        },
-    });
+    deckgl.setProps({ initialViewState: { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
+        zoom: defaultCenter.zoom, pitch: pitch3d ? 45 : 0, bearing: 0, transitionDuration: 1200 } });
 }
 function togglePitch() {
     pitch3d = !pitch3d;
     document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
     document.getElementById('chk-3d').checked = pitch3d;
-    deckgl.setProps({
-        initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 },
-    });
+    deckgl.setProps({ initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 } });
     renderLayers();
 }
 function toggle3D() {
     pitch3d = document.getElementById('chk-3d').checked;
     document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
-    deckgl.setProps({
-        initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 },
-    });
+    deckgl.setProps({ initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 } });
     renderLayers();
 }
-function toggleLayer(name) {
-    layerState[name] = !layerState[name];
-    renderLayers();
-}
+function toggleLayer(name) { layerState[name] = !layerState[name]; renderLayers(); }
 function onRadiusChange(val) {
     hexRadius = parseInt(val, 10);
     document.getElementById('kpi-radius').textContent = Number(hexRadius).toLocaleString('es-CL');
     renderLayers();
 }
-
-// ── Nav ────────────────────────────────────────────────────────────────────
-function setPage(page, el) {
-    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
-    el.classList.add('active');
-    // Future: route to other views
-}
-
-// ── Report download ────────────────────────────────────────────────────────
 function downloadReport() {
     if (!appData || !appData.talleres) return;
-    const rows = appData.talleres.map(t =>
-        `${t.taller_nombre},${t.asignadas},${t.pct}%,${t.radius_km}`
-    );
+    const rows = appData.talleres.map(t => `${t.taller_nombre},${t.asignadas},${t.pct}%,${t.radius_km}`);
     const csv = 'Taller,Unidades Asignadas,% Flota,Radio (km)\n' + rows.join('\n');
     const a = document.createElement('a');
     a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
@@ -702,12 +872,410 @@ function downloadReport() {
     a.click();
 }
 
-// ── Pulse animation keyframe ───────────────────────────────────────────────
-const style = document.createElement('style');
-style.textContent = `@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }`;
-document.head.appendChild(style);
 
-// ── Boot ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+//  VISTA EJECUTIVA
+// ═══════════════════════════════════════════════════════
+let _ejCharts = {};
+
+function loadEjecutivo() {
+    fetch('/api/ejecutivo')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderEjecutivo(data))
+        .catch(err => {
+            document.getElementById('ej-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+function renderEjecutivo(data) {
+    document.getElementById('ej-loading').style.display = 'none';
+    document.getElementById('ej-content').style.display = 'block';
+
+    const resumen = data.resumen || [];
+    const sorted  = [...resumen].sort((a, b) => a.unidades - b.unidades);
+    const top10   = (data.top_distancia || []);
+    const cob     = data.cobertura || { dentro: 0, fuera: 0 };
+
+    // ── Bar: unidades por taller ──
+    if (_ejCharts.bar) _ejCharts.bar.destroy();
+    _ejCharts.bar = new Chart(document.getElementById('chart-bar-talleres'), {
+        type: 'bar',
+        data: {
+            labels: sorted.map(r => r.taller_cercano_nombre || r.taller || ''),
+            datasets: [{
+                data: sorted.map(r => r.unidades),
+                backgroundColor: sorted.map((_, i) => `rgba(242,190,140,${0.4 + (i/sorted.length)*0.55})`),
+                borderColor: '#f2be8c', borderWidth: 0,
+                borderRadius: 3,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.5)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { display: false }, ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 11 } } },
+            },
+        },
+    });
+
+    // ── Doughnut: cobertura ──
+    if (_ejCharts.pie) _ejCharts.pie.destroy();
+    _ejCharts.pie = new Chart(document.getElementById('chart-pie-cobertura'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Dentro del radio', 'Fuera del radio'],
+            datasets: [{
+                data: [cob.dentro, cob.fuera],
+                backgroundColor: ['rgba(167,204,234,0.75)', 'rgba(80,69,59,0.45)'],
+                borderColor: ['#a7ccea', '#50453b'],
+                borderWidth: 1.5,
+            }],
+        },
+        options: {
+            cutout: '62%', responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 20, usePointStyle: true },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const total = cob.dentro + cob.fuera;
+                            const p = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                            return ` ${fmt(ctx.raw)} unidades (${p}%)`;
+                        }
+                    }
+                }
+            },
+        },
+    });
+
+    // ── Bar: top 10 distancia ──
+    if (_ejCharts.dist) _ejCharts.dist.destroy();
+    _ejCharts.dist = new Chart(document.getElementById('chart-bar-dist'), {
+        type: 'bar',
+        data: {
+            labels: top10.map(r => r.taller_cercano_nombre || r.taller || ''),
+            datasets: [{
+                data: top10.map(r => r.dist_prom),
+                backgroundColor: 'rgba(167,204,234,0.55)',
+                borderColor: '#a7ccea', borderWidth: 0, borderRadius: 3,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${fmtDec(ctx.raw)} km` } },
+            },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.5)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { display: false }, ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 11 } } },
+            },
+        },
+    });
+
+    // ── Table ──
+    const cols = [
+        { key: 'taller_cercano_nombre', label: 'Taller' },
+        { key: 'unidades',   label: 'Unidades',     fmt: fmt },
+        { key: 'pct',        label: '% Total',      fmt: v => `${v}%` },
+        { key: 'dist_prom',  label: 'Dist. prom. (km)', fmt: v => fmtDec(v) },
+        { key: 'dist_max',   label: 'Dist. max. (km)',  fmt: v => fmtDec(v) },
+        { key: 'dist_min',   label: 'Dist. min. (km)',  fmt: v => fmtDec(v) },
+    ];
+    document.getElementById('ej-table').innerHTML =
+        buildTable(cols, [...resumen].sort((a, b) => b.unidades - a.unidades));
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  DETALLE UNIDADES
+// ═══════════════════════════════════════════════════════
+let _detTimer = null;
+let _detSelectsReady = false;
+
+function loadDetalle(params) {
+    document.getElementById('det-loading').style.display = 'flex';
+    document.getElementById('det-table').style.display   = 'none';
+
+    const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries(params).filter(([, v]) => v && v !== '1000'))
+    ).toString();
+
+    fetch('/api/detalle' + (qs ? '?' + qs : ''))
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderDetalle(data))
+        .catch(err => {
+            document.getElementById('det-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+function renderDetalle(data) {
+    document.getElementById('det-loading').style.display = 'none';
+    document.getElementById('det-table').style.display   = 'block';
+
+    // Populate selects on first load
+    if (!_detSelectsReady) {
+        _detSelectsReady = true;
+        const selT = document.getElementById('det-taller');
+        const selE = document.getElementById('det-empresa');
+        (data.talleres || []).forEach(t => {
+            const o = document.createElement('option'); o.value = t; o.textContent = t;
+            selT.appendChild(o);
+        });
+        (data.empresas || []).forEach(e => {
+            const o = document.createElement('option'); o.value = e; o.textContent = e;
+            selE.appendChild(o);
+        });
+    }
+
+    const total  = data.total || 0;
+    const shown  = (data.rows || []).length;
+    document.getElementById('det-info').textContent =
+        `Mostrando ${shown.toLocaleString('es-CL')} de ${total.toLocaleString('es-CL')} filas filtradas` +
+        (total > 500 ? ' — descarga el CSV para ver todas' : '');
+
+    const cols = [
+        { key: 'unit_id',                   label: 'ID / VIN' },
+        { key: 'empresa',                   label: 'Empresa' },
+        { key: 'patente',                   label: 'Patente' },
+        { key: 'taller_cercano_nombre',     label: 'Taller asignado' },
+        { key: 'distancia_taller_cercano_km', label: 'Dist. (km)', fmt: v => fmtDec(v) },
+        { key: 'dentro_radio_taller',       label: 'Dentro radio', fmt: v =>
+            `<span style="color:${v ? '#4ade80' : '#f87171'};font-weight:600">${v ? '✓' : '✗'}</span>` },
+        { key: 'radio_taller_km',           label: 'Radio (km)',  fmt: v => fmtDec(v) },
+    ];
+    document.getElementById('det-table').innerHTML = buildTable(cols, data.rows || [], { raw: true });
+}
+
+function applyDetalleFilter() {
+    const dist = parseInt(document.getElementById('det-dist').value, 10);
+    document.getElementById('det-dist-label').textContent =
+        dist >= 1000 ? 'sin límite' : `${dist} km`;
+    loadDetalle({
+        taller:   document.getElementById('det-taller').value,
+        empresa:  document.getElementById('det-empresa').value,
+        q:        document.getElementById('det-q').value,
+        dist_max: dist < 1000 ? dist : '',
+    });
+}
+
+function applyDetalleFilterDebounced() {
+    clearTimeout(_detTimer);
+    _detTimer = setTimeout(applyDetalleFilter, 420);
+    // update label immediately
+    const dist = parseInt(document.getElementById('det-dist').value, 10);
+    document.getElementById('det-dist-label').textContent =
+        dist >= 1000 ? 'sin límite' : `${dist} km`;
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  TENDENCIA SEMANAL
+// ═══════════════════════════════════════════════════════
+let _tendData = null;
+let _tendChart = null;
+
+function loadTendencia() {
+    fetch('/api/tendencia')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderTendencia(data))
+        .catch(err => {
+            document.getElementById('tend-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+const TEND_COLORS = [
+    '#f2be8c','#a7ccea','#7dd3a8','#c084fc','#fb923c',
+    '#38bdf8','#f472b6','#a3e635','#fbbf24','#60a5fa',
+];
+
+function renderTendencia(data) {
+    _tendData = data;
+    document.getElementById('tend-loading').style.display = 'none';
+
+    if (!data.labels || !data.labels.length) {
+        document.getElementById('tend-loading').style.display = 'flex';
+        document.getElementById('tend-loading').textContent = 'Sin datos de tendencia. Acumula más snapshots.';
+        return;
+    }
+
+    document.getElementById('tend-content').style.display = 'block';
+
+    // Checkboxes: first 5 talleres pre-selected
+    const checks = document.getElementById('tend-checks');
+    checks.innerHTML = '';
+    (data.talleres || []).forEach((t, i) => {
+        const id = `tc-${i}`;
+        const label = document.createElement('label');
+        label.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors';
+        label.style.background = 'rgba(53,53,52,0.4)';
+        label.style.border = '1px solid rgba(53,53,52,0.6)';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox'; chk.id = id;
+        chk.checked = i < 5;
+        chk.style.accentColor = TEND_COLORS[i % TEND_COLORS.length];
+        chk.addEventListener('change', () => updateTendenciaChart());
+        const dot = document.createElement('span');
+        dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:${TEND_COLORS[i % TEND_COLORS.length]};flex-shrink:0`;
+        const txt = document.createElement('span');
+        txt.className = 'text-xs text-[#e5e2e1]/70';
+        txt.textContent = t;
+        label.append(chk, dot, txt);
+        checks.appendChild(label);
+    });
+
+    updateTendenciaChart();
+}
+
+function updateTendenciaChart() {
+    if (!_tendData) return;
+    const talleres = _tendData.talleres || [];
+    const selected = talleres.filter((_, i) =>
+        document.getElementById(`tc-${i}`) && document.getElementById(`tc-${i}`).checked
+    );
+    const seriesMap = {};
+    (_tendData.series || []).forEach(s => { seriesMap[s.taller] = s.data; });
+
+    if (_tendChart) _tendChart.destroy();
+    _tendChart = new Chart(document.getElementById('chart-tendencia'), {
+        type: 'line',
+        data: {
+            labels: _tendData.labels,
+            datasets: selected.map((t, i) => ({
+                label: t,
+                data: seriesMap[t] || [],
+                borderColor: TEND_COLORS[talleres.indexOf(t) % TEND_COLORS.length],
+                backgroundColor: TEND_COLORS[talleres.indexOf(t) % TEND_COLORS.length] + '18',
+                borderWidth: 2, pointRadius: 4, tension: 0.3,
+                fill: false,
+            })),
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, pointStyleWidth: 10 },
+                },
+            },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.4)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { color: 'rgba(53,53,52,0.4)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+            },
+        },
+    });
+
+    // Render pivot table
+    const cols = [{ key: 'semana', label: 'Semana' }]
+        .concat(selected.map(t => ({ key: t, label: t, fmt: v => fmt(v || 0) })));
+
+    const rows = (_tendData.labels || []).map((semana, wi) => {
+        const row = { semana };
+        selected.forEach(t => { row[t] = (seriesMap[t] || [])[wi] ?? 0; });
+        return row;
+    });
+
+    document.getElementById('tend-table').innerHTML = buildTable(cols, rows);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  REPORTES
+// ═══════════════════════════════════════════════════════
+function renderReportes() {
+    const snapTs = document.getElementById('snap-ts-header').textContent;
+    if (snapTs) {
+        document.getElementById('rep-snap-ts').textContent =
+            `Datos del último snapshot (${snapTs.replace('Snapshot: ', '')})`;
+    }
+
+    const cards = [
+        {
+            icon: 'directions_bus',
+            title: 'Snapshot Completo de Unidades',
+            desc:  'Todas las unidades GPS del último snapshot con taller más cercano, empresa y distancia.',
+            href:  '/api/export/units',
+            file:  'snapshot_units.csv',
+        },
+        {
+            icon: 'build',
+            title: 'Detalle por Taller',
+            desc:  'Unidades por taller con distancias, dentro/fuera del radio y empresa.',
+            href:  '/api/export/detalle',
+            file:  'detalle_unidades.csv',
+        },
+        {
+            icon: 'radar',
+            title: 'Cobertura Overlap por Taller',
+            desc:  'Unidades en radio de 100 km por taller (overlap — una unidad puede aparecer en varios).',
+            href:  '/api/export/cobertura',
+            file:  'coverage_overlap.csv',
+        },
+    ];
+
+    document.getElementById('rep-cards').innerHTML = cards.map(c => `
+        <div class="section-card flex items-center gap-6">
+            <div class="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center"
+                 style="background:rgba(242,190,140,0.12); border:1px solid rgba(242,190,140,0.2)">
+                <span class="icon text-[#f2be8c]">${c.icon}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-[#e5e2e1] mb-1">${c.title}</div>
+                <div class="text-xs text-[#e5e2e1]/40 leading-relaxed">${c.desc}</div>
+            </div>
+            <a href="${c.href}" download="${c.file}"
+               class="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg
+                      font-bold text-xs tracking-wide uppercase transition-all active:scale-95
+                      hover:bg-[#f0bd8b]"
+               style="background:#f2be8c; color:#482904;">
+                <span class="icon" style="font-size:16px;">download</span>
+                Descargar
+            </a>
+        </div>
+    `).join('');
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  SHARED: Table builder
+// ═══════════════════════════════════════════════════════
+function buildTable(cols, rows, opts = {}) {
+    const ths = cols.map(c =>
+        `<th>${c.label}</th>`
+    ).join('');
+
+    const trs = rows.map(row => {
+        const tds = cols.map(c => {
+            const raw = row[c.key];
+            const val = (raw == null || raw === '') ? '—' : raw;
+            const rendered = c.fmt ? c.fmt(val) : val;
+            return opts.raw ? `<td>${rendered}</td>` : `<td>${escHtml(String(rendered))}</td>`;
+        }).join('');
+        return `<tr>${tds}</tr>`;
+    }).join('');
+
+    return `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', initDeck);
 </script>
 </body>
