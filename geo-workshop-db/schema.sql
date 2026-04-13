@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS dim_taller (
     lat             DOUBLE PRECISION,
     lon             DOUBLE PRECISION,
     geom            GEOMETRY(Point, 4326),
+    zona            TEXT,
     activo          BOOLEAN DEFAULT TRUE,
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS snapshot_unit (
     patente                     TEXT,
     empresa                     TEXT,
     vehicle_name                TEXT,
+    modelo                      TEXT,
     lat                         DOUBLE PRECISION,
     lon                         DOUBLE PRECISION,
     geom                        GEOMETRY(Point, 4326),
@@ -52,6 +54,10 @@ CREATE TABLE IF NOT EXISTS snapshot_unit (
     distancia_taller_cercano_km DOUBLE PRECISION,
     dentro_radio_taller         BOOLEAN,
     radio_taller_km             DOUBLE PRECISION,
+    can_odometer                DOUBLE PRECISION,
+    can_horometer               DOUBLE PRECISION,
+    can_odoliter                DOUBLE PRECISION,
+    has_can_data                BOOLEAN,
     UNIQUE (run_id, unit_id)
 );
 

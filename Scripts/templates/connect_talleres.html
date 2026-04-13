@@ -94,8 +94,22 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
 .tool-btn.active { color: #f2be8c; border-color: rgba(242,190,140,0.3); }
 
 /* ── KPI strip card ── */
-.kpi-card { min-width: 180px; flex: 1; background: rgba(53,53,52,0.55);
-            border: 1px solid rgba(80,69,59,0.25); border-radius: 8px; padding: 14px 16px; }
+.kpi-card { min-width: 150px; flex: 1; background: rgba(53,53,52,0.55);
+            border: 1px solid rgba(80,69,59,0.25); border-radius: 8px; padding: 12px 14px; }
+
+/* ── Mobile sidebar overlay ── */
+#mobile-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+                  z-index:200; backdrop-filter:blur(4px); }
+#mobile-overlay.open { display:block; }
+#mobile-sidebar { position:fixed; top:0; left:0; height:100%; width:272px; z-index:201;
+                  background:#1c1b1b; border-right:1px solid rgba(53,53,52,0.3);
+                  transform:translateX(-100%); transition:transform .25s ease; display:flex; flex-direction:column; }
+#mobile-sidebar.open { transform:translateX(0); }
+
+/* ── Section card responsive ── */
+@media (max-width: 640px) {
+    .section-card { padding: 14px 14px; border-radius: 10px; }
+}
 
 /* ── Deck.gl custom tooltip ── */
 #deck-tooltip {
@@ -143,8 +157,52 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
 
 <body class="flex overflow-hidden" style="height:100vh">
 
+<!-- Mobile overlay + sidebar -->
+<div id="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div id="mobile-sidebar">
+    <div class="px-6 pt-6 pb-4 flex items-center justify-between border-b border-[#353534]/25">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center"
+                 style="background:linear-gradient(135deg,#f2be8c,#a0724a);">
+                <span class="icon icon-fill text-[#482904]" style="font-size:16px;">directions_bus</span>
+            </div>
+            <span class="serif text-[#f2be8c] font-bold text-base">Fleet Intelligence</span>
+        </div>
+        <button onclick="closeMobileMenu()" class="text-[#e5e2e1]/40 hover:text-[#e5e2e1]/80">
+            <span class="icon">close</span>
+        </button>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <a class="nav-link" onclick="setPage('ejecutivo',this);closeMobileMenu()">
+            <span class="icon">dashboard</span> Vista Ejecutiva
+        </a>
+        <a class="nav-link" onclick="setPage('detalle',this);closeMobileMenu()">
+            <span class="icon">directions_bus</span> Detalle Unidades
+        </a>
+        <a class="nav-link" onclick="setPage('tendencia',this);closeMobileMenu()">
+            <span class="icon">trending_up</span> Tendencia Semanal
+        </a>
+        <a class="nav-link" onclick="setPage('mapa',this);closeMobileMenu()">
+            <span class="icon icon-fill">build</span> Connect Talleres
+        </a>
+        <a class="nav-link" onclick="setPage('reportes',this);closeMobileMenu()">
+            <span class="icon">assessment</span> Reportes
+        </a>
+        <a class="nav-link" onclick="setPage('estado-flota',this);closeMobileMenu()">
+            <span class="icon">build_circle</span> Estado de Flota
+        </a>
+    </nav>
+    <div class="px-5 pb-6">
+        <button onclick="downloadReport();closeMobileMenu()"
+            class="w-full py-3 rounded-lg font-bold text-xs tracking-[0.15em] uppercase
+                   flex items-center justify-center gap-2 bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+            Generar Reporte <span class="icon" style="font-size:16px;">download</span>
+        </button>
+    </div>
+</div>
+
 <!-- ════════════════════════════════════════════════
-     SIDEBAR
+     SIDEBAR (desktop)
 ════════════════════════════════════════════════ -->
 <aside class="hidden md:flex flex-col h-screen flex-shrink-0 bg-[#1c1b1b] border-r border-[#353534]/25"
        style="width:272px;">
@@ -179,6 +237,9 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
         </a>
         <a class="nav-link" onclick="setPage('reportes',this)">
             <span class="icon">assessment</span> Reportes
+        </a>
+        <a class="nav-link" onclick="setPage('estado-flota',this)">
+            <span class="icon">build_circle</span> Estado de Flota
         </a>
     </nav>
 
@@ -226,11 +287,16 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
 <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#131313]">
 
     <!-- ── Top Header ── -->
-    <header class="flex-shrink-0 z-40 flex justify-between items-center px-8 h-[72px]
+    <header class="flex-shrink-0 z-40 flex justify-between items-center px-4 md:px-8 h-[60px] md:h-[72px]
                    bg-[#131313]/90 backdrop-blur-md border-b border-[#353534]/20
                    shadow-xl shadow-[#f2be8c]/[0.03]">
-        <div class="flex items-center gap-5">
-            <h1 class="serif text-2xl font-black text-[#f2be8c] tracking-tight"
+        <div class="flex items-center gap-3 md:gap-5 min-w-0">
+            <!-- Hamburger (mobile only) -->
+            <button class="md:hidden flex-shrink-0 text-[#e5e2e1]/60 hover:text-[#f2be8c] transition-colors"
+                    onclick="openMobileMenu()">
+                <span class="icon">menu</span>
+            </button>
+            <h1 class="serif text-lg md:text-2xl font-black text-[#f2be8c] tracking-tight truncate"
                 id="page-title">Connect Talleres</h1>
             <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full
                         bg-[#2a2a2a] border border-[#50453b]/30">
@@ -339,7 +405,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                 </div>
 
                 <!-- Floating KPI panel (top-left) -->
-                <div class="absolute top-5 left-5 z-30" style="width:240px">
+                <div class="absolute top-3 left-3 md:top-5 md:left-5 z-30" style="width:min(240px,calc(100vw - 100px))">
                     <div class="glass bg-[#131313]/78 border border-white/[0.06] rounded-xl p-5 shadow-2xl relative">
                         <div id="fl-loading"
                              class="absolute inset-0 rounded-xl flex items-center justify-center z-10"
@@ -375,7 +441,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                 </div>
 
                 <!-- Legend (bottom-left) -->
-                <div class="absolute z-30" style="bottom:140px;left:20px">
+                <div class="absolute z-30 hidden sm:block" style="bottom:20px;left:20px">
                     <div class="glass bg-[#1c1b1b]/88 border border-white/[0.05] p-4 rounded-lg">
                         <div class="text-[9px] text-[#e5e2e1]/40 font-bold tracking-[0.18em] uppercase mb-2">
                             Densidad de Unidades
@@ -427,54 +493,124 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                     <button class="tool-btn" onclick="togglePitch()" title="Rotar vista" id="btn-pitch">
                         <span class="icon">3d_rotation</span>
                     </button>
+                    <div style="height:4px"></div>
+                    <button class="tool-btn" onclick="toggleSearchPanel()" title="Búsqueda por dirección" id="btn-search">
+                        <span class="icon">search</span>
+                    </button>
                 </div>
 
-                <!-- Timeline / Player (bottom) -->
-                <div class="absolute bottom-0 left-0 right-0 z-30
-                            glass bg-[#1c1b1b]/92 border-t border-[#353534]/20 py-5 px-10">
-                    <div class="max-w-4xl mx-auto flex flex-col gap-3">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-4">
-                                <button class="w-10 h-10 rounded-full flex items-center justify-center
-                                               transition-colors hover:bg-[#f0bd8b] active:scale-90"
-                                        style="background:#f2be8c">
-                                    <span class="icon icon-fill text-[#482904]">play_arrow</span>
-                                </button>
-                                <div>
-                                    <div class="serif text-sm font-bold text-[#f2be8c]" id="timeline-date">—</div>
-                                    <div class="text-[10px] font-mono text-[#e5e2e1]/35" id="timeline-time">
-                                        Último snapshot
-                                    </div>
+                <!-- ── Search Panel ── -->
+                <div id="search-panel" class="absolute z-30"
+                     style="top:20px; right:76px; width:min(300px, calc(100vw - 96px)); display:none;">
+                    <div class="glass bg-[#131313]/88 border border-white/[0.07] rounded-xl shadow-2xl overflow-hidden">
+
+                        <!-- Header -->
+                        <div class="flex items-center justify-between px-5 pt-5 pb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="icon text-[#f2be8c]" style="font-size:18px">search</span>
+                                <span class="serif text-[#f2be8c] font-bold text-sm">Búsqueda por Dirección</span>
+                            </div>
+                            <button onclick="closeSearchPanel()"
+                                    class="text-[#e5e2e1]/30 hover:text-[#e5e2e1]/70 transition-colors">
+                                <span class="icon" style="font-size:18px">close</span>
+                            </button>
+                        </div>
+
+                        <!-- Form -->
+                        <div class="px-5 pb-4 space-y-3">
+                            <div>
+                                <label class="text-[9px] font-bold tracking-[0.15em] uppercase text-[#e5e2e1]/35 block mb-1.5">
+                                    Dirección
+                                </label>
+                                <div class="flex gap-2">
+                                    <input id="search-address" type="text"
+                                           placeholder="Ej: Antofagasta o Av. Grecia 750, Antofagasta"
+                                           onkeydown="if(event.key==='Enter') runRadioSearch()"
+                                           class="flex-1 text-[12px]"/>
                                 </div>
                             </div>
-                            <div class="flex gap-2">
-                                <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
-                                               text-[#f2be8c] bg-[#353534]">LIVE</button>
-                                <button class="px-3 py-1.5 rounded text-[10px] font-bold tracking-[0.12em]
-                                               text-[#e5e2e1]/35 bg-[#201f1f] hover:text-[#f2be8c] transition-colors">
-                                    HISTORIAL
+                            <div>
+                                <label class="text-[9px] font-bold tracking-[0.15em] uppercase text-[#e5e2e1]/35 block mb-1.5">
+                                    Radio de búsqueda:
+                                    <span id="search-radius-label" class="text-[#a7ccea] ml-1">100 km</span>
+                                </label>
+                                <input type="range" min="5" max="500" step="5" value="100"
+                                       id="search-radius-slider"
+                                       oninput="document.getElementById('search-radius-label').textContent=this.value+' km'"
+                                       class="w-full accent-[#a7ccea] cursor-pointer"/>
+                            </div>
+                            <button onclick="runRadioSearch()" id="search-btn"
+                                    class="w-full py-2.5 rounded-lg font-bold text-xs tracking-[0.12em] uppercase
+                                           flex items-center justify-center gap-2 transition-all active:scale-95
+                                           bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+                                <span class="icon" style="font-size:16px">my_location</span>
+                                Buscar
+                            </button>
+                            <div id="search-error" class="text-[11px] text-red-400 text-center" style="display:none"></div>
+                        </div>
+
+                        <!-- Results (hidden until search runs) -->
+                        <div id="search-results" style="display:none">
+                            <div class="h-px mx-5" style="background:rgba(53,53,52,0.6)"></div>
+
+                            <!-- Summary card -->
+                            <div class="px-5 py-4 space-y-2.5">
+                                <div class="text-[10px] text-[#e5e2e1]/30 font-mono truncate" id="sr-address"></div>
+
+                                <div class="flex items-end gap-3">
+                                    <div>
+                                        <div class="serif text-3xl font-black text-[#f2be8c]" id="sr-count">0</div>
+                                        <div class="text-[10px] text-[#e5e2e1]/40 mt-0.5">unidades encontradas</div>
+                                    </div>
+                                    <div class="pb-1">
+                                        <div class="text-xs text-[#a7ccea] font-bold" id="sr-radius-lbl"></div>
+                                        <div class="text-[10px] text-[#e5e2e1]/35">radio de búsqueda</div>
+                                    </div>
+                                </div>
+
+                                <!-- Mini empresa breakdown -->
+                                <div id="sr-empresas" class="space-y-1"></div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="px-5 pb-3 flex gap-2">
+                                <button onclick="toggleSearchTable()"
+                                        id="btn-toggle-table"
+                                        class="flex-1 py-2 rounded-lg text-[11px] font-bold tracking-wide
+                                               flex items-center justify-center gap-1.5 transition-all
+                                               bg-[#2a2a2a] hover:bg-[#353534] text-[#e5e2e1]/70 border border-[#50453b]/40">
+                                    <span class="icon" style="font-size:15px" id="icon-toggle-table">expand_more</span>
+                                    Ver unidades
+                                </button>
+                                <button onclick="downloadSearchCSV()"
+                                        class="flex-1 py-2 rounded-lg text-[11px] font-bold tracking-wide
+                                               flex items-center justify-center gap-1.5 transition-all
+                                               bg-[#2a2a2a] hover:bg-[#353534] text-[#e5e2e1]/70 border border-[#50453b]/40">
+                                    <span class="icon" style="font-size:15px">download</span>
+                                    Descargar CSV
                                 </button>
                             </div>
-                        </div>
-                        <div class="relative w-full">
-                            <div class="w-full h-1.5 rounded-full" style="background:#353534">
-                                <div class="h-full rounded-full transition-all duration-500"
-                                     style="width:75%;background:#f2be8c" id="timeline-bar"></div>
+
+                            <!-- Collapsible table -->
+                            <div id="search-table-wrap" style="display:none; max-height:260px; overflow-y:auto;">
+                                <div class="h-px" style="background:rgba(53,53,52,0.4)"></div>
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Patente</th>
+                                            <th>Empresa</th>
+                                            <th>Taller asignado</th>
+                                            <th>Dist. km</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="search-table-body"></tbody>
+                                </table>
                             </div>
-                            <div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full cursor-pointer
-                                        border-4 border-[#1c1b1b]"
-                                 style="left:75%;transform:translate(-50%,-50%);background:#f2be8c;
-                                        box-shadow:0 0 12px rgba(242,190,140,0.4)"
-                                 id="timeline-thumb"></div>
-                            <div class="flex justify-between mt-4 text-[9px] font-bold tracking-[0.12em]
-                                        text-[#e5e2e1]/20 uppercase">
-                                <span>00:00</span><span>04:00</span><span>08:00</span>
-                                <span style="color:rgba(242,190,140,0.6)">12:00</span>
-                                <span>16:00</span><span>20:00</span><span>23:59</span>
-                            </div>
                         </div>
+
                     </div>
                 </div>
+
 
             </div><!-- end map viewport -->
         </div><!-- end page-mapa -->
@@ -484,11 +620,25 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
              PAGE: VISTA EJECUTIVA
         ══════════════════════════════════ -->
         <div id="page-ejecutivo" class="page-panel">
-            <div class="p-6 max-w-7xl mx-auto w-full">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
 
                 <div id="ej-loading" class="loading-state animate-pulse">Cargando datos...</div>
 
                 <div id="ej-content" style="display:none">
+
+                    <!-- ── KPI Zonas ── -->
+                    <div id="zona-kpis" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-6"></div>
+
+                    <!-- ── Chart Zonas ── -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Unidades por zona de operación
+                        </div>
+                        <div style="height:320px; position:relative;">
+                            <canvas id="chart-bar-zonas"></canvas>
+                        </div>
+                    </div>
+
                     <!-- Charts row -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                         <div class="section-card">
@@ -518,11 +668,39 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                         </div>
                     </div>
                     <!-- Table -->
-                    <div class="section-card">
+                    <div class="section-card mb-6">
                         <div class="serif text-[#f2be8c] font-bold text-base mb-4">
                             Resumen por taller
                         </div>
                         <div id="ej-table" class="overflow-x-auto"></div>
+                    </div>
+
+                    <!-- ── Modelos por sucursal ── -->
+                    <div class="section-card mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="serif text-[#f2be8c] font-bold text-base">
+                                Modelos por taller
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Taller</span>
+                                <select id="mod-suc-filter"
+                                    class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                    onchange="renderModSucChart()">
+                                    <option value="__all__">Todos</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="mod-suc-loading" class="loading-state animate-pulse">Cargando modelos...</div>
+                        <div id="mod-suc-error" style="display:none" class="text-red-400 text-xs p-4"></div>
+                        <div id="mod-suc-chart-wrap" style="height:320px; position:relative; display:none;" class="mb-6">
+                            <canvas id="chart-modelos-suc"></canvas>
+                        </div>
+                    </div>
+                    <div class="section-card">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Tabla modelos × taller
+                        </div>
+                        <div id="mod-suc-table" class="overflow-x-auto"></div>
                     </div>
                 </div>
             </div>
@@ -533,7 +711,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
              PAGE: DETALLE UNIDADES
         ══════════════════════════════════ -->
         <div id="page-detalle" class="page-panel">
-            <div class="p-6 max-w-7xl mx-auto w-full">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
 
                 <!-- Filters -->
                 <div class="section-card mb-4">
@@ -594,7 +772,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
              PAGE: TENDENCIA SEMANAL
         ══════════════════════════════════ -->
         <div id="page-tendencia" class="page-panel">
-            <div class="p-6 max-w-7xl mx-auto w-full">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
 
                 <div id="tend-loading" class="loading-state animate-pulse">Cargando datos...</div>
 
@@ -627,7 +805,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
              PAGE: REPORTES
         ══════════════════════════════════ -->
         <div id="page-reportes" class="page-panel">
-            <div class="p-6 max-w-4xl mx-auto w-full">
+            <div class="p-3 md:p-6 max-w-4xl mx-auto w-full">
                 <p id="rep-snap-ts" class="text-xs text-[#e5e2e1]/35 mb-6 font-mono">
                     Datos del último snapshot
                 </p>
@@ -636,6 +814,78 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                 </div>
             </div>
         </div><!-- end page-reportes -->
+
+        <!-- ══════════════════════════════════
+             PAGE: ESTADO DE FLOTA
+        ══════════════════════════════════ -->
+        <div id="page-estado-flota" class="page-panel">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" id="ef-kpis" style="display:none!important">
+                    <div class="section-card text-center">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Con telemetría CAN</div>
+                        <div class="serif text-2xl font-bold text-[#f2be8c]" id="ef-con-can">—</div>
+                    </div>
+                    <div class="section-card text-center">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Sin datos CAN</div>
+                        <div class="serif text-2xl font-bold text-[#e5e2e1]/40" id="ef-sin-can">—</div>
+                    </div>
+                    <div class="section-card text-center border border-red-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Críticos (&le;2.000 km)</div>
+                        <div class="serif text-2xl font-bold text-red-400" id="ef-criticos">—</div>
+                    </div>
+                    <div class="section-card text-center border border-yellow-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Atención (&le;5.000 km)</div>
+                        <div class="serif text-2xl font-bold text-yellow-400" id="ef-atencion">—</div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="section-card mb-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Empresa</label>
+                            <select id="ef-empresa" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas las empresas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado</label>
+                            <select id="ef-estado" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todos</option>
+                                <option value="CRITICO">Crítico</option>
+                                <option value="ATENCION">Atención</option>
+                                <option value="OK">OK</option>
+                                <option value="SIN_DATOS">Sin datos CAN</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Buscar patente / VIN</label>
+                            <input type="text" id="ef-q" placeholder="Ej: ABCD12" oninput="applyEstadoFlotaFilterDebounced()"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info bar -->
+                <div class="flex items-center justify-between mb-4">
+                    <p id="ef-info" class="text-xs text-[#e5e2e1]/35 font-mono">—</p>
+                    <button onclick="downloadEstadoFlotaCSV()"
+                        class="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase flex items-center gap-2
+                               transition-all active:scale-95 bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+                        <span class="icon" style="font-size:15px;">download</span>
+                        Descargar CSV
+                    </button>
+                </div>
+
+                <div id="ef-loading" class="loading-state animate-pulse">Cargando datos...</div>
+                <div id="ef-table" class="section-card overflow-x-auto" style="display:none; padding:0;"></div>
+                <div class="mt-4 section-card" style="display:none" id="ef-legend">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-2">Umbrales por marca (km)</div>
+                    <div id="ef-legend-body" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+        </div><!-- end page-estado-flota -->
 
     </div><!-- end content area -->
 </main>
@@ -655,28 +905,43 @@ Chart.defaults.font.size       = 12;
 
 // ── Page titles ───────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-    mapa:       'Connect Talleres',
-    ejecutivo:  'Vista Ejecutiva',
-    detalle:    'Detalle Unidades',
-    tendencia:  'Tendencia Semanal',
-    reportes:   'Reportes',
+    mapa:           'Connect Talleres',
+    ejecutivo:      'Vista Ejecutiva',
+    detalle:        'Detalle Unidades',
+    tendencia:      'Tendencia Semanal',
+    reportes:       'Reportes',
+    'estado-flota': 'Estado de Flota',
 };
 
 // ── Page routing ──────────────────────────────────────────────────────────
 const _loaded = {};
 
+function openMobileMenu() {
+    document.getElementById('mobile-sidebar').classList.add('open');
+    document.getElementById('mobile-overlay').classList.add('open');
+}
+function closeMobileMenu() {
+    document.getElementById('mobile-sidebar').classList.remove('open');
+    document.getElementById('mobile-overlay').classList.remove('open');
+}
+
 function setPage(page, el) {
     document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
     el.classList.add('active');
+    // Sync active state in mobile sidebar too
+    document.querySelectorAll('#mobile-sidebar .nav-link').forEach(a => a.classList.remove('active'));
+    const mobileMatch = document.querySelector(`#mobile-sidebar .nav-link[onclick*="'${page}'"]`);
+    if (mobileMatch) mobileMatch.classList.add('active');
     document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
     document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
     document.getElementById('page-' + page).classList.add('active');
     if (!_loaded[page]) {
         _loaded[page] = true;
-        if (page === 'ejecutivo') loadEjecutivo();
-        if (page === 'detalle')   loadDetalle({});
-        if (page === 'tendencia') loadTendencia();
-        if (page === 'reportes')  renderReportes();
+        if (page === 'ejecutivo')    loadEjecutivo();
+        if (page === 'detalle')      loadDetalle({});
+        if (page === 'tendencia')    loadTendencia();
+        if (page === 'reportes')     renderReportes();
+        if (page === 'estado-flota') loadEstadoFlota();
     }
 }
 
@@ -752,11 +1017,6 @@ function updateMapKPIs(data) {
     document.getElementById('sb-top-n').textContent     = fmt(k.top_taller_n);
     document.getElementById('sb-top-name').textContent  = k.top_taller || '—';
     document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
-    if (data.snap_ts) {
-        const [d, t] = data.snap_ts.split('T');
-        document.getElementById('timeline-date').textContent = d || data.snap_ts;
-        document.getElementById('timeline-time').textContent = (t || '') + ' UTC';
-    }
 }
 
 function buildLayers(data) {
@@ -874,6 +1134,230 @@ function downloadReport() {
 
 
 // ═══════════════════════════════════════════════════════
+//  BÚSQUEDA POR DIRECCIÓN + RADIO
+// ═══════════════════════════════════════════════════════
+let _searchResults = [];
+let _searchTableOpen = false;
+
+function toggleSearchPanel() {
+    const panel = document.getElementById('search-panel');
+    const btn   = document.getElementById('btn-search');
+    const open  = panel.style.display === 'none';
+    panel.style.display = open ? 'block' : 'none';
+    btn.classList.toggle('active', open);
+    if (open) document.getElementById('search-address').focus();
+}
+
+function closeSearchPanel() {
+    document.getElementById('search-panel').style.display = 'none';
+    document.getElementById('btn-search').classList.remove('active');
+    clearSearchLayers();
+}
+
+function clearSearchLayers() {
+    if (!deckgl || !appData) return;
+    deckgl.setProps({ layers: buildLayers(appData) });
+}
+
+async function runRadioSearch() {
+    const address = document.getElementById('search-address').value.trim();
+    const radius  = parseFloat(document.getElementById('search-radius-slider').value);
+    const errEl   = document.getElementById('search-error');
+    const btn     = document.getElementById('search-btn');
+
+    errEl.style.display = 'none';
+    if (!address) { errEl.textContent = 'Ingresa una dirección.'; errEl.style.display = 'block'; return; }
+
+    btn.textContent = 'Geocodificando…';
+    btn.disabled = true;
+
+    // 1. Geocodificar con Nominatim
+    let lat, lon, displayName;
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=es&q=${encodeURIComponent(address)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Geocodificador no disponible (${resp.status})`);
+        const geo  = await resp.json();
+        if (!geo.length) throw new Error('Dirección no encontrada. Prueba con ciudad o región, ej: "Antofagasta" o "Av. Grecia 750, Antofagasta".');
+        lat         = parseFloat(geo[0].lat);
+        lon         = parseFloat(geo[0].lon);
+        displayName = geo[0].display_name;
+    } catch (e) {
+        errEl.textContent = e.message || 'Error al geocodificar.';
+        errEl.style.display = 'block';
+        btn.textContent = 'Buscar';
+        btn.disabled = false;
+        return;
+    }
+
+    btn.textContent = 'Consultando…';
+
+    // 2. Buscar unidades en el radio
+    let data;
+    try {
+        const resp = await fetch(`/api/radio-search?lat=${lat}&lon=${lon}&radius_km=${radius}`);
+        const raw  = await resp.text();
+        try { data = JSON.parse(raw); } catch (_) {
+            throw new Error(`Error del servidor (${resp.status}). Revisa la consola del servidor Flask.`);
+        }
+        if (data.error) throw new Error(data.error);
+    } catch (e) {
+        errEl.textContent = e.message || 'Error al consultar el servidor.';
+        errEl.style.display = 'block';
+        btn.innerHTML = '<span class="icon" style="font-size:16px">my_location</span> Buscar';
+        btn.disabled = false;
+        return;
+    }
+
+    btn.innerHTML = '<span class="icon" style="font-size:16px">my_location</span> Buscar';
+    btn.disabled = false;
+    _searchResults = data.rows || [];
+
+    // 3. Mostrar resultados
+    renderSearchResults(data, lat, lon, displayName, radius);
+
+    // 4. Actualizar capas del mapa
+    renderSearchLayers(lat, lon, radius, data.rows || []);
+
+    // 5. Volar al centroide
+    deckgl.setProps({
+        initialViewState: {
+            longitude: lon, latitude: lat,
+            zoom: Math.max(4, Math.min(12, 13.5 - Math.log2(radius))),
+            pitch: pitch3d ? 45 : 0, bearing: 0, transitionDuration: 1400,
+            transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+        },
+    });
+}
+
+function renderSearchResults(data, lat, lon, displayName, radius) {
+    document.getElementById('search-results').style.display = 'block';
+    document.getElementById('sr-address').textContent = displayName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    document.getElementById('sr-count').textContent   = fmt(data.count);
+    document.getElementById('sr-radius-lbl').textContent = `${radius} km`;
+
+    // Breakdown por empresa
+    const rows = data.rows || [];
+    const byEmpresa = {};
+    rows.forEach(r => { const e = r.empresa || 'Sin empresa'; byEmpresa[e] = (byEmpresa[e] || 0) + 1; });
+    const sorted = Object.entries(byEmpresa).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const empEl = document.getElementById('sr-empresas');
+    empEl.innerHTML = sorted.map(([name, n]) => `
+        <div class="flex justify-between items-center">
+            <span class="text-[10px] text-[#e5e2e1]/45 truncate" style="max-width:160px">${name}</span>
+            <span class="text-[10px] font-bold text-[#f2be8c]">${fmt(n)}</span>
+        </div>`).join('');
+
+    // Tabla
+    const tbody = document.getElementById('search-table-body');
+    tbody.innerHTML = rows.slice(0, 200).map(r => `
+        <tr>
+            <td class="font-mono text-[11px]">${r.patente || '—'}</td>
+            <td class="text-[11px]">${r.empresa || '—'}</td>
+            <td class="text-[10px] text-[#e5e2e1]/50 truncate" style="max-width:120px">${r.taller_cercano_nombre || '—'}</td>
+            <td class="font-mono text-[11px] text-[#a7ccea]">${r.distancia_km != null ? r.distancia_km + ' km' : '—'}</td>
+        </tr>`).join('');
+
+    // Reset table state
+    _searchTableOpen = false;
+    document.getElementById('search-table-wrap').style.display = 'none';
+    document.getElementById('icon-toggle-table').textContent = 'expand_more';
+}
+
+function toggleSearchTable() {
+    _searchTableOpen = !_searchTableOpen;
+    document.getElementById('search-table-wrap').style.display = _searchTableOpen ? 'block' : 'none';
+    document.getElementById('icon-toggle-table').textContent = _searchTableOpen ? 'expand_less' : 'expand_more';
+}
+
+function renderSearchLayers(lat, lon, radius_km, units) {
+    if (!deckgl || !appData) return;
+    const base = buildLayers(appData);
+    const radiusM = radius_km * 1000;
+
+    // Relleno suave del círculo
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-radius-fill',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: radiusM,
+        getFillColor: [167, 204, 234, 20],
+        stroked: false, filled: true, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Borde del círculo (línea sólida)
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-radius-border',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: radiusM,
+        getFillColor: [0, 0, 0, 0],
+        getLineColor: [167, 204, 234, 220],
+        stroked: true, filled: false,
+        lineWidthMinPixels: 2,
+        pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Unidades encontradas
+    if (units.length) {
+        base.push(new deck.ScatterplotLayer({
+            id: 'search-units',
+            data: units.filter(u => u.lat && u.lon),
+            getPosition: d => [parseFloat(d.lon), parseFloat(d.lat)],
+            getRadius: 1800,
+            getFillColor: [167, 204, 234, 210],
+            getLineColor: [255, 255, 255, 60],
+            stroked: true, filled: true, lineWidthMinPixels: 1, pickable: false,
+            radiusUnits: 'meters',
+        }));
+    }
+
+    // Halo exterior del pin (anillo blanco semitransparente)
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-pin-halo',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: 5500,
+        getFillColor: [255, 255, 255, 0],
+        getLineColor: [255, 255, 255, 90],
+        stroked: true, filled: false,
+        lineWidthMinPixels: 1.5, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Pin principal — punto blanco sólido
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-pin',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: 3000,
+        getFillColor: [255, 255, 255, 255],
+        getLineColor: [167, 204, 234, 255],
+        stroked: true, filled: true,
+        lineWidthMinPixels: 2, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    deckgl.setProps({ layers: base });
+}
+
+function downloadSearchCSV() {
+    if (!_searchResults.length) return;
+    const header = 'Patente,Empresa,Modelo,Taller Asignado,Distancia (km),Lat,Lon';
+    const rows   = _searchResults.map(r =>
+        `${r.patente||''},${r.empresa||''},${r.modelo||''},${r.taller_cercano_nombre||''},${r.distancia_km||''},${r.lat||''},${r.lon||''}`
+    );
+    const csv = header + '\n' + rows.join('\n');
+    const a   = document.createElement('a');
+    a.href    = 'data:text/csv;charset=utf-8-sig,' + encodeURIComponent(csv);
+    a.download = `busqueda_radio_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+}
+
+
+// ═══════════════════════════════════════════════════════
 //  VISTA EJECUTIVA
 // ═══════════════════════════════════════════════════════
 let _ejCharts = {};
@@ -896,6 +1380,120 @@ function renderEjecutivo(data) {
     const sorted  = [...resumen].sort((a, b) => a.unidades - b.unidades);
     const top10   = (data.top_distancia || []);
     const cob     = data.cobertura || { dentro: 0, fuera: 0 };
+    const zonas   = data.zona || [];
+
+    // ── KPI cards por zona ──
+    const ZONA_COLORS = {
+        'NORTE GRANDE':         '#f2be8c',
+        'NORTE CHICO':          '#fcd34d',
+        'METROPOLITANA':        '#a7ccea',
+        'METROPOLITANA ORIENTE':'#93c5fd',
+        'METROPOLINA ORIENTE':  '#93c5fd',
+        'CENTRO':               '#86efac',
+        'SUR':                  '#6ee7b7',
+        'EXTREMO SUR':          '#c4b5fd',
+    };
+    const kpiWrap = document.getElementById('zona-kpis');
+    kpiWrap.innerHTML = zonas.map(z => {
+        const color   = ZONA_COLORS[z.zona] || '#e5e2e1';
+        const fuera   = z.unidades - z.dentro;
+        const barPct  = z.unidades ? Math.round(z.dentro / z.unidades * 100) : 0;
+        return `
+        <div class="section-card flex flex-col gap-1.5 min-w-0">
+            <div class="text-[8px] font-bold tracking-[0.15em] uppercase truncate"
+                 style="color:${color}">${z.zona}</div>
+
+            <div class="flex flex-col">
+                <div class="serif text-2xl font-black" style="color:${color}">${fmt(z.unidades)}</div>
+                <div class="text-[10px] text-[#e5e2e1]/35">unidades</div>
+            </div>
+
+            <div class="h-px" style="background:rgba(53,53,52,0.5)"></div>
+
+            <!-- Barra dentro/fuera del radio -->
+            <div>
+                <div class="flex justify-between text-[9px] mb-1">
+                    <span class="text-[#e5e2e1]/40">Dentro del radio</span>
+                    <span class="font-bold" style="color:${color}">${fmt(z.dentro)} <span class="text-[#e5e2e1]/30 font-normal">/ ${fmt(z.unidades)}</span></span>
+                </div>
+                <div class="w-full rounded-full overflow-hidden" style="height:4px;background:rgba(53,53,52,0.6)">
+                    <div class="h-full rounded-full" style="width:${barPct}%;background:${color};opacity:0.8"></div>
+                </div>
+                <div class="text-[9px] text-[#e5e2e1]/25 mt-0.5">${fuera > 0 ? fmt(fuera)+' fuera del radio' : 'Todos dentro del radio'}</div>
+            </div>
+
+            <div class="h-px" style="background:rgba(53,53,52,0.5)"></div>
+
+            <div class="flex justify-between text-[10px]">
+                <span class="text-[#e5e2e1]/40">Talleres</span>
+                <span class="font-bold text-[#e5e2e1]/70">${z.talleres}</span>
+            </div>
+            <div class="flex justify-between text-[10px]">
+                <span class="text-[#e5e2e1]/40">Dist. prom. al taller</span>
+                <span class="font-bold text-[#e5e2e1]/60">${fmtDec(z.dist_prom)} km</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // ── Bar horizontal: unidades por zona (dentro / fuera del radio) ──
+    if (_ejCharts.zonas) _ejCharts.zonas.destroy();
+    _ejCharts.zonas = new Chart(document.getElementById('chart-bar-zonas'), {
+        type: 'bar',
+        data: {
+            labels: zonas.map(z => z.zona),
+            datasets: [
+                {
+                    label: 'Dentro del radio',
+                    data: zonas.map(z => z.dentro),
+                    backgroundColor: zonas.map(z => {
+                        const c = ZONA_COLORS[z.zona] || '#f2be8c';
+                        const r = parseInt(c.slice(1,3),16);
+                        const g = parseInt(c.slice(3,5),16);
+                        const b = parseInt(c.slice(5,7),16);
+                        return `rgba(${r},${g},${b},0.75)`;
+                    }),
+                    borderWidth: 0, borderRadius: { topLeft:3, bottomLeft:3 },
+                },
+                {
+                    label: 'Fuera del radio',
+                    data: zonas.map(z => z.unidades - z.dentro),
+                    backgroundColor: 'rgba(53,53,52,0.55)',
+                    borderWidth: 0, borderRadius: { topRight:3, bottomRight:3 },
+                },
+            ],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const z = zonas[ctx.dataIndex];
+                            const pct = z.unidades ? (ctx.raw / z.unidades * 100).toFixed(1) : 0;
+                            return ` ${ctx.dataset.label}: ${fmt(ctx.raw)} (${pct}%)`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { color: 'rgba(53,53,52,0.4)' },
+                    ticks: { color: 'rgba(229,226,225,0.35)', font: { size: 10 } },
+                },
+                y: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: { color: 'rgba(229,226,225,0.7)', font: { size: 11 }, padding: 4 },
+                },
+            },
+        },
+    });
 
     // ── Bar: unidades por taller ──
     if (_ejCharts.bar) _ejCharts.bar.destroy();
@@ -991,6 +1589,138 @@ function renderEjecutivo(data) {
     ];
     document.getElementById('ej-table').innerHTML =
         buildTable(cols, [...resumen].sort((a, b) => b.unidades - a.unidades));
+
+    // Cargar sección modelos por sucursal (independiente del resto)
+    try { loadModSucursal(); } catch(e) {
+        document.getElementById('mod-suc-loading').style.display = 'none';
+        document.getElementById('mod-suc-error').textContent = `Error: ${e.message}`;
+        document.getElementById('mod-suc-error').style.display = 'block';
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  MODELOS POR SUCURSAL
+// ═══════════════════════════════════════════════════════
+let _modSucData   = null;
+let _modSucChart  = null;
+
+// Paleta de colores para sucursales
+const MOD_PALETTE = [
+    '#f2be8c','#a7ccea','#86efac','#fcd34d','#f9a8d4',
+    '#c4b5fd','#6ee7b7','#fb923c','#67e8f9','#e879f9',
+];
+
+function loadModSucursal() {
+    document.getElementById('mod-suc-loading').style.display = 'flex';
+    document.getElementById('mod-suc-error').style.display   = 'none';
+    document.getElementById('mod-suc-chart-wrap').style.display = 'none';
+
+    fetch('/api/modelos-sucursal')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            _modSucData = data;
+            document.getElementById('mod-suc-loading').style.display = 'none';
+
+            if (!data.rows || !data.rows.length) {
+                document.getElementById('mod-suc-error').textContent = 'Sin datos de modelos para este snapshot.';
+                document.getElementById('mod-suc-error').style.display = 'block';
+                return;
+            }
+
+            // Poblar filtro de taller
+            const sel = document.getElementById('mod-suc-filter');
+            sel.innerHTML = '<option value="__all__">Todos</option>';
+            (data.talleres || []).forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                sel.appendChild(opt);
+            });
+
+            document.getElementById('mod-suc-chart-wrap').style.display = 'block';
+            renderModSucChart();
+            renderModSucTable();
+        })
+        .catch(err => {
+            document.getElementById('mod-suc-loading').style.display = 'none';
+            document.getElementById('mod-suc-error').textContent = `Error al cargar modelos: ${err.message}`;
+            document.getElementById('mod-suc-error').style.display = 'block';
+            console.warn('modelos-sucursal:', err.message);
+        });
+}
+
+function renderModSucChart() {
+    if (!_modSucData) return;
+    const tallerFiltro = document.getElementById('mod-suc-filter').value;
+    const { talleres, modelos, rows } = _modSucData;
+
+    const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
+
+    // Filtrar modelos con al menos 1 unidad en los talleres activos
+    const modFiltrados = modelos.filter(m => {
+        const row = rows.find(r => r.modelo === m);
+        return row && talleresActivos.some(t => (row[t] || 0) > 0);
+    }).slice(0, 20);
+
+    // Convertir hex a rgba manualmente
+    const styledDatasets = talleresActivos.map((taller, i) => {
+        const hex = MOD_PALETTE[i % MOD_PALETTE.length];
+        const r = parseInt(hex.slice(1,3),16);
+        const g = parseInt(hex.slice(3,5),16);
+        const b = parseInt(hex.slice(5,7),16);
+        return {
+            label: taller,
+            data: modFiltrados.map(m => {
+                const row = rows.find(r => r.modelo === m);
+                return row ? (row[taller] || 0) : 0;
+            }),
+            backgroundColor: `rgba(${r},${g},${b},0.65)`,
+            borderColor: hex,
+            borderWidth: 0, borderRadius: 3,
+        };
+    });
+
+    if (_modSucChart) _modSucChart.destroy();
+    _modSucChart = new Chart(document.getElementById('chart-modelos-suc'), {
+        type: 'bar',
+        data: { labels: modFiltrados, datasets: styledDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} unidades` },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 10 }, maxRotation: 35 },
+                },
+                y: {
+                    grid: { color: 'rgba(53,53,52,0.5)' },
+                    ticks: { color: 'rgba(229,226,225,0.4)', stepSize: 1 },
+                },
+            },
+        },
+    });
+}
+
+function renderModSucTable() {
+    if (!_modSucData) return;
+    const { talleres, rows } = _modSucData;
+
+    // Columnas: Modelo | taller1 | taller2 | ... | Total
+    const cols = [
+        { key: 'modelo', label: 'Modelo' },
+        ...talleres.map(t => ({ key: t, label: t, fmt: fmt })),
+        { key: 'total', label: 'Total', fmt: fmt },
+    ];
+    document.getElementById('mod-suc-table').innerHTML =
+        buildTable(cols, rows);
 }
 
 
@@ -1046,6 +1776,7 @@ function renderDetalle(data) {
         { key: 'unit_id',                   label: 'ID / VIN' },
         { key: 'empresa',                   label: 'Empresa' },
         { key: 'patente',                   label: 'Patente' },
+        { key: 'modelo',                    label: 'Modelo' },
         { key: 'taller_cercano_nombre',     label: 'Taller asignado' },
         { key: 'distancia_taller_cercano_km', label: 'Dist. (km)', fmt: v => fmtDec(v) },
         { key: 'dentro_radio_taller',       label: 'Dentro radio', fmt: v =>
@@ -1246,6 +1977,171 @@ function renderReportes() {
     `).join('');
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  ESTADO DE FLOTA
+// ═══════════════════════════════════════════════════════
+let _efData = null;
+let _efTimer = null;
+
+const EF_ESTADO_CFG = {
+    CRITICO:   { label: 'Crítico',   cls: 'text-red-400',    badge: 'bg-red-500/15 text-red-400 border border-red-500/30' },
+    ATENCION:  { label: 'Atención',  cls: 'text-yellow-400', badge: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30' },
+    OK:        { label: 'OK',        cls: 'text-green-400',  badge: 'bg-green-500/15 text-green-400 border border-green-500/30' },
+    SIN_DATOS: { label: 'Sin datos', cls: 'text-[#e5e2e1]/30', badge: 'bg-[#353534]/40 text-[#e5e2e1]/30 border border-[#353534]/40' },
+};
+
+function loadEstadoFlota() {
+    document.getElementById('ef-loading').style.display = 'flex';
+    document.getElementById('ef-table').style.display   = 'none';
+    document.getElementById('ef-legend').style.display  = 'none';
+
+    fetch('/api/estado-flota')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            _efData = data;
+
+            // KPI cards
+            const k = data.kpis;
+            document.getElementById('ef-con-can').textContent  = fmt(k.con_can);
+            document.getElementById('ef-sin-can').textContent  = fmt(k.sin_can);
+            document.getElementById('ef-criticos').textContent = fmt(k.criticos);
+            document.getElementById('ef-atencion').textContent = fmt(k.atencion);
+            document.getElementById('ef-kpis').style.cssText   = 'display:grid!important';
+
+            // Empresa select
+            const empSel = document.getElementById('ef-empresa');
+            empSel.innerHTML = '<option value="">Todas las empresas</option>' +
+                (data.empresas || []).map(e => `<option value="${escHtml(e)}">${escHtml(e)}</option>`).join('');
+
+            renderEstadoFlotaTable(data.rows);
+            renderEfLegend(data.rows);
+            document.getElementById('ef-loading').style.display = 'none';
+        })
+        .catch(err => {
+            document.getElementById('ef-loading').innerHTML =
+                `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">Error: ${err.message}</div>`;
+        });
+}
+
+function renderEstadoFlotaTable(rows) {
+    if (!rows || rows.length === 0) {
+        document.getElementById('ef-table').innerHTML =
+            '<div class="p-8 text-center text-xs text-[#e5e2e1]/30">Sin datos para los filtros seleccionados</div>';
+        document.getElementById('ef-table').style.display = 'block';
+        document.getElementById('ef-info').textContent = '0 unidades';
+        return;
+    }
+
+    const html = `<table class="data-table">
+        <thead><tr>
+            <th>Estado</th>
+            <th>Patente</th>
+            <th>Empresa</th>
+            <th>Modelo</th>
+            <th>Taller más cercano</th>
+            <th>Odómetro (km)</th>
+            <th>Horómetro (h)</th>
+            <th>Próx. servicio (km)</th>
+            <th>Km restantes</th>
+            <th>Umbral marca</th>
+        </tr></thead>
+        <tbody>
+        ${rows.map(r => {
+            const cfg = EF_ESTADO_CFG[r.estado] || EF_ESTADO_CFG.SIN_DATOS;
+            const badge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.badge}">${cfg.label}</span>`;
+            const odo  = r.can_odometer  != null ? fmt(r.can_odometer)  + ' km' : '—';
+            const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h' : '—';
+            const prox = r.proximo_servicio_km != null ? fmt(r.proximo_servicio_km) + ' km' : '—';
+            let kmRest = '—';
+            if (r.km_restantes != null) {
+                const cls = r.estado === 'CRITICO' ? 'text-red-400 font-bold' :
+                            r.estado === 'ATENCION' ? 'text-yellow-400 font-bold' : 'text-green-400';
+                kmRest = `<span class="${cls}">${fmt(r.km_restantes)} km</span>`;
+            }
+            const umbral = r.umbral_km != null ? `${fmt(r.umbral_km)} km<br><span class="text-[10px] text-[#e5e2e1]/30">${r.marca_detectada}</span>` : '—';
+            return `<tr>
+                <td>${badge}</td>
+                <td class="font-mono">${escHtml(r.patente || '—')}</td>
+                <td>${escHtml(r.empresa || '—')}</td>
+                <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
+                <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
+                <td class="font-mono text-right">${odo}</td>
+                <td class="font-mono text-right">${hora}</td>
+                <td class="font-mono text-right">${prox}</td>
+                <td class="font-mono text-right">${kmRest}</td>
+                <td class="text-[11px] text-center">${umbral}</td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+
+    document.getElementById('ef-table').innerHTML = html;
+    document.getElementById('ef-table').style.display = 'block';
+    document.getElementById('ef-info').textContent =
+        `${fmt(rows.length)} unidades · ordenadas por urgencia`;
+}
+
+function renderEfLegend(rows) {
+    // Mostrar qué marcas se detectaron y sus umbrales
+    const marcas = {};
+    rows.forEach(r => {
+        if (r.marca_detectada && r.marca_detectada !== 'DESCONOCIDA') {
+            marcas[r.marca_detectada] = r.umbral_km;
+        }
+    });
+    const legendEl = document.getElementById('ef-legend');
+    const bodyEl   = document.getElementById('ef-legend-body');
+    if (Object.keys(marcas).length === 0) { legendEl.style.display = 'none'; return; }
+    bodyEl.innerHTML = Object.entries(marcas).sort().map(([m, u]) =>
+        `<span class="px-2 py-1 rounded text-[10px] font-mono bg-[#2a2a2a] text-[#e5e2e1]/60 border border-[#353534]/50">
+            ${m}: ${fmt(u)} km
+        </span>`
+    ).join('');
+    legendEl.style.display = 'block';
+}
+
+function applyEstadoFlotaFilter() {
+    if (!_efData) return;
+    const emp    = document.getElementById('ef-empresa').value;
+    const estado = document.getElementById('ef-estado').value;
+    const q      = document.getElementById('ef-q').value.trim().toUpperCase();
+
+    let rows = _efData.rows;
+    if (emp)    rows = rows.filter(r => r.empresa === emp);
+    if (estado) rows = rows.filter(r => r.estado  === estado);
+    if (q)      rows = rows.filter(r =>
+        (r.patente  || '').toUpperCase().includes(q) ||
+        (r.unit_id  || '').toUpperCase().includes(q) ||
+        (r.empresa  || '').toUpperCase().includes(q) ||
+        (r.modelo   || '').toUpperCase().includes(q)
+    );
+    renderEstadoFlotaTable(rows);
+}
+
+function applyEstadoFlotaFilterDebounced() {
+    clearTimeout(_efTimer);
+    _efTimer = setTimeout(applyEstadoFlotaFilter, 250);
+}
+
+function downloadEstadoFlotaCSV() {
+    if (!_efData) return;
+    const cols = ['patente','empresa','modelo','taller','can_odometer','can_horometer',
+                  'marca_detectada','umbral_km','proximo_servicio_km','km_restantes','estado'];
+    const header = cols.join(',');
+    const body = _efData.rows.map(r =>
+        cols.map(c => {
+            const v = r[c] == null ? '' : String(r[c]);
+            return v.includes(',') ? `"${v}"` : v;
+        }).join(',')
+    ).join('\n');
+    const blob = new Blob(['\uFEFF' + header + '\n' + body], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'estado_flota.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
 
 // ═══════════════════════════════════════════════════════
 //  SHARED: Table builder
