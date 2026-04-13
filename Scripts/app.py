@@ -147,8 +147,18 @@ def parse_latlon_cell(s: Any) -> Tuple[Optional[float], Optional[float]]:
         return None, None
 
 def get_engine() -> Engine:
-    url = f"postgresql+psycopg://{PGUSER}:{PGPASSWORD}@{PGHOST}:{PGPORT}/{PGDATABASE}?sslmode=require"
-    return create_engine(url, future=True, pool_pre_ping=True)
+    # Si hay DATABASE_URL en el entorno (ej. Neon), úsala directamente
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    if db_url:
+        for _old, _new in [("postgresql+pg8000://","postgresql+psycopg://"),
+                            ("postgresql://","postgresql+psycopg://"),
+                            ("postgres://","postgresql+psycopg://")]:
+            if db_url.startswith(_old):
+                db_url = db_url.replace(_old, _new, 1)
+                break
+    else:
+        db_url = f"postgresql+psycopg://{PGUSER}:{PGPASSWORD}@{PGHOST}:{PGPORT}/{PGDATABASE}?sslmode=disable"
+    return create_engine(db_url, future=True, pool_pre_ping=True)
 
 
 # =========================
@@ -269,7 +279,13 @@ def load_talleres(xlsx_path: str) -> pd.DataFrame:
         df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
     df = df.dropna(subset=["lat","lon"]).copy()
     df = df[df["lat"].between(-90,90) & df["lon"].between(-180,180)].copy()
-    out = df[["taller_id","taller_nombre","lat","lon"]].reset_index(drop=True)
+    # zona — columna opcional (nombre puede venir con espacios extra)
+    zona_col = next((c for c in df.columns if str(c).strip().upper() == "ZONA"), None)
+    if zona_col:
+        df["zona"] = df[zona_col].astype(str).str.strip().str.upper().replace("NAN", "")
+    else:
+        df["zona"] = ""
+    out = df[["taller_id","taller_nombre","lat","lon","zona"]].reset_index(drop=True)
     out["taller_id"]     = out["taller_id"].astype(str).str.strip()
     out["taller_nombre"] = out["taller_nombre"].astype(str).str.strip()
     return out
@@ -337,7 +353,7 @@ def units_from_vehicle_records(df_raw: pd.DataFrame, snap_ts_utc: str) -> pd.Dat
     if not id_col:
         raise RuntimeError("El CSV no trae VIN ni IMEI.")
 
-    optional = [c for c in ["patente","empresa","vehicle_name","imei","vin","can_odometer","can_horometer"] if c in df_raw.columns and c != id_col]
+    optional = [c for c in ["patente","empresa","vehicle_name","imei","vin","can_odometer","can_horometer","can_odoliter","has_can_data"] if c in df_raw.columns and c != id_col]
     df = df_raw[[id_col,"latitude","longitude","_gps_dt"] + optional].copy()
     df = df.rename(columns={id_col:"unit_id","latitude":"lat","longitude":"lon"})
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
@@ -419,18 +435,39 @@ def compute_coverage_exclusive(df_units, df_talleres, radius_km):
 
 
 # =========================
+# Migraciones automáticas
+# =========================
+def run_migrations(engine):
+    """Aplica columnas nuevas si no existen. Seguro de ejecutar múltiples veces."""
+    migrations = [
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odometer  DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_horometer DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odoliter  DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS has_can_data  BOOLEAN",
+        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS zona          TEXT",
+    ]
+    with engine.begin() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:
+                log.warning("Migración ignorada (%s): %s", stmt.split()[5], e)
+    log.info("Migraciones OK")
+
+# =========================
 # PostgreSQL writes (sin cambios)
 # =========================
 def upsert_dim_taller(engine, df_talleres):
     sql = text("""
-        INSERT INTO dim_taller (taller_id,taller_nombre,lat,lon,geom,activo,updated_at)
-        VALUES (:taller_id,:taller_nombre,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),TRUE,NOW())
+        INSERT INTO dim_taller (taller_id,taller_nombre,lat,lon,geom,zona,activo,updated_at)
+        VALUES (:taller_id,:taller_nombre,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),:zona,TRUE,NOW())
         ON CONFLICT (taller_id) DO UPDATE SET
             taller_nombre=EXCLUDED.taller_nombre,lat=EXCLUDED.lat,lon=EXCLUDED.lon,
-            geom=EXCLUDED.geom,activo=TRUE,updated_at=NOW();
+            geom=EXCLUDED.geom,zona=EXCLUDED.zona,activo=TRUE,updated_at=NOW();
     """)
+    cols = ["taller_id","taller_nombre","lat","lon","zona"]
     with engine.begin() as conn:
-        conn.execute(sql, df_talleres[["taller_id","taller_nombre","lat","lon"]].to_dict("records"))
+        conn.execute(sql, df_talleres[cols].to_dict("records"))
     log.info("dim_taller upsert OK | filas=%s", len(df_talleres))
 
 def insert_snapshot_run(engine, snap_ts, local_iso, hour_bucket, total_units_snapshot):
@@ -465,7 +502,9 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
         df["empresa"] = df["Empresa"].where(df["Empresa"].notna(), df.get("empresa"))
     if "Patente" in df.columns:
         df["patente"] = df["Patente"].where(df["Patente"].notna(), df.get("patente"))
-    for col in ["vin","imei","patente","empresa","vehicle_name"]:
+    if "Modelo" in df.columns:
+        df["modelo"] = df["Modelo"].where(df["Modelo"].notna(), None)
+    for col in ["vin","imei","patente","empresa","vehicle_name","modelo","can_odometer","can_horometer","can_odoliter","has_can_data"]:
         if col not in df.columns: df[col] = None
     df["run_id"]          = run_id
     df["snapshot_ts_utc"] = pd.to_datetime(snap_ts, utc=True).to_pydatetime()
@@ -478,28 +517,36 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
             "run_id": int(r["run_id"]), "snapshot_ts_utc": r["snapshot_ts_utc"],
             "snapshot_date": r["snapshot_date"], "unit_id": s("unit_id"),
             "vin": s("vin"), "imei": s("imei"), "patente": s("patente"),
-            "empresa": s("empresa"), "vehicle_name": s("vehicle_name"),
+            "empresa": s("empresa"), "vehicle_name": s("vehicle_name"), "modelo": s("modelo"),
             "lat": float(r["lat"]), "lon": float(r["lon"]),
             "taller_cercano_id": s("taller_cercano_id"),
             "taller_cercano_nombre": s("taller_cercano_nombre"),
             "distancia_taller_cercano_km": None if pd.isna(r.get("distancia_taller_cercano_km")) else float(r["distancia_taller_cercano_km"]),
             "dentro_radio_taller": bool(r.get("dentro_radio_taller", False)),
             "radio_taller_km": float(r.get("radio_taller_km", RADIUS_KM)),
+            "can_odometer": None if pd.isna(r.get("can_odometer")) else float(r["can_odometer"]),
+            "can_horometer": None if pd.isna(r.get("can_horometer")) else float(r["can_horometer"]),
+            "can_odoliter": None if pd.isna(r.get("can_odoliter")) else float(r["can_odoliter"]),
+            "has_can_data": None if r.get("has_can_data") is None else bool(r["has_can_data"]),
         })
     sql = text("""
         INSERT INTO snapshot_unit (run_id,snapshot_ts_utc,snapshot_date,unit_id,vin,imei,patente,
-            empresa,vehicle_name,lat,lon,geom,taller_cercano_id,taller_cercano_nombre,
-            distancia_taller_cercano_km,dentro_radio_taller,radio_taller_km)
+            empresa,vehicle_name,modelo,lat,lon,geom,taller_cercano_id,taller_cercano_nombre,
+            distancia_taller_cercano_km,dentro_radio_taller,radio_taller_km,
+            can_odometer,can_horometer,can_odoliter,has_can_data)
         VALUES (:run_id,:snapshot_ts_utc,:snapshot_date,:unit_id,:vin,:imei,:patente,
-            :empresa,:vehicle_name,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),
+            :empresa,:vehicle_name,:modelo,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),
             :taller_cercano_id,:taller_cercano_nombre,:distancia_taller_cercano_km,
-            :dentro_radio_taller,:radio_taller_km)
+            :dentro_radio_taller,:radio_taller_km,
+            :can_odometer,:can_horometer,:can_odoliter,:has_can_data)
         ON CONFLICT (run_id,unit_id) DO UPDATE SET
-            empresa=EXCLUDED.empresa,vehicle_name=EXCLUDED.vehicle_name,
+            empresa=EXCLUDED.empresa,vehicle_name=EXCLUDED.vehicle_name,modelo=EXCLUDED.modelo,
             taller_cercano_id=EXCLUDED.taller_cercano_id,
             taller_cercano_nombre=EXCLUDED.taller_cercano_nombre,
             distancia_taller_cercano_km=EXCLUDED.distancia_taller_cercano_km,
-            dentro_radio_taller=EXCLUDED.dentro_radio_taller;
+            dentro_radio_taller=EXCLUDED.dentro_radio_taller,
+            can_odometer=EXCLUDED.can_odometer,can_horometer=EXCLUDED.can_horometer,
+            can_odoliter=EXCLUDED.can_odoliter,has_can_data=EXCLUDED.has_can_data;
     """)
     with engine.begin() as conn:
         conn.execute(sql, records)
@@ -622,6 +669,7 @@ def main():
 
     # PostgreSQL
     engine = get_engine()
+    run_migrations(engine)
     upsert_dim_taller(engine, df_talleres)
     run_id = insert_snapshot_run(engine, snap_ts, local_iso, hour_bucket,
                                   int(df_units["unit_id"].nunique()))
