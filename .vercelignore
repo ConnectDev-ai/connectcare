@@ -1,0 +1,10 @@
+geo-workshop-db/data/
+Scripts/out/
+Scripts/__pycache__/
+Scripts/viewer.py
+Scripts/viewer_hex.py
+Scripts/viewer_osm.py
+Scripts/new_viewer_hex.py
+Scripts/config.toml
+Scripts/yaml/
+"Scripts/import base64.py"

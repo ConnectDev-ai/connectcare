@@ -1,0 +1,8 @@
+flask
+pandas
+numpy
+sqlalchemy
+psycopg[binary]
+openpyxl
+requests
+python-dotenv
