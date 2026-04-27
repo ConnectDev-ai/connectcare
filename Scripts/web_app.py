@@ -14,13 +14,17 @@ from __future__ import annotations
 import json
 import math
 import os
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
+import jwt as pyjwt
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request, send_file
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from sqlalchemy import create_engine, text
 import io
 
@@ -49,8 +53,66 @@ for _old, _new in [
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
+# ── Supabase JWT ──────────────────────────────────────────────────────────────
+# Obtener en: Supabase Dashboard → Settings → API → JWT Secret
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+
+# ── Fallas DTC ────────────────────────────────────────────────────────────────
+def _load_fallas() -> dict[str, list[dict]]:
+    """Carga el reporte de fallas más reciente de Data/reporte_fallas_*.xlsx → dict VIN→fallas."""
+    data_dir = PROJECT_ROOT / "Data"
+    excels = sorted(data_dir.glob("reporte_fallas_*.xlsx"), reverse=True)
+    if not excels:
+        return {}
+    try:
+        df = pd.read_excel(excels[0], dtype=str)
+        df.columns = [c.strip() for c in df.columns]
+        df["vin"] = df["vin"].str.strip().str.upper()
+        result: dict[str, list[dict]] = {}
+        for _, r in df.iterrows():
+            vin = r.get("vin", "")
+            if not vin or pd.isna(vin):
+                continue
+            result.setdefault(vin, []).append({
+                "tipo_falla": str(r.get("affected_parameter", "")).strip() or None,
+                "prioridad":  str(r.get("PRIORIDAD", "")).strip() or None,
+            })
+        return result
+    except Exception:
+        return {}
+
+_FALLAS_BY_VIN: dict[str, list[dict]] = _load_fallas()
+
 # ── Flask ─────────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates", static_folder="static")
+
+limiter = Limiter(get_remote_address, app=app, default_limits=["300 per hour"])
+
+@app.after_request
+def add_security_headers(resp: Response) -> Response:
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"]        = "DENY"
+    resp.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
+    return resp
+
+def require_auth(f):
+    """Valida el JWT de Supabase en el header Authorization: Bearer <token>."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not SUPABASE_JWT_SECRET:
+            return f(*args, **kwargs)  # sin secret configurado → solo modo dev local
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return _json({"error": "Unauthorized"}, 401)
+        token = auth[7:]
+        try:
+            pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+        except pyjwt.ExpiredSignatureError:
+            return _json({"error": "Session expired"}, 401)
+        except Exception:
+            return _json({"error": "Unauthorized"}, 401)
+        return f(*args, **kwargs)
+    return decorated
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
 class _SafeEnc(json.JSONEncoder):
@@ -122,8 +184,16 @@ def _safe_str(v) -> str:
 def index():
     return render_template("connect_talleres.html")
 
+@app.route("/logo.png")
+def serve_logo():
+    logo_path = BASE_DIR / "Logo.png"
+    if logo_path.exists():
+        return send_file(logo_path, mimetype="image/png")
+    return "", 404
+
 # ── Route: /api/data  (mapa + KPIs globales) ──────────────────────────────────
 @app.route("/api/data")
+@require_auth
 def api_data():
     run_id, snap_ts = _latest_run()
     if run_id is None:
@@ -202,6 +272,7 @@ def api_data():
 
 # ── Route: /api/ejecutivo ─────────────────────────────────────────────────────
 @app.route("/api/ejecutivo")
+@require_auth
 def api_ejecutivo():
     run_id, snap_ts = _latest_run()
     if run_id is None:
@@ -283,6 +354,7 @@ def api_ejecutivo():
 
 # ── Route: /api/detalle ───────────────────────────────────────────────────────
 @app.route("/api/detalle")
+@require_auth
 def api_detalle():
     run_id, snap_ts = _latest_run()
     if run_id is None:
@@ -313,8 +385,8 @@ def api_detalle():
         df = df[df["empresa"] == empresa]
     if buscar:
         q = buscar.upper()
-        m1 = df["unit_id"].astype(str).str.upper().str.contains(q, na=False)
-        m2 = df["patente"].astype(str).str.upper().str.contains(q, na=False) if "patente" in df.columns else pd.Series(False, index=df.index)
+        m1 = df["unit_id"].astype(str).str.upper().str.contains(q, na=False, regex=False)
+        m2 = df["patente"].astype(str).str.upper().str.contains(q, na=False, regex=False) if "patente" in df.columns else pd.Series(False, index=df.index)
         df = df[m1 | m2]
     if dist_mx < 9999:
         df = df[df["distancia_taller_cercano_km"] <= dist_mx]
@@ -338,6 +410,7 @@ def api_detalle():
 
 # ── Route: /api/tendencia ─────────────────────────────────────────────────────
 @app.route("/api/tendencia")
+@require_auth
 def api_tendencia():
     try:
         with engine.connect() as conn:
@@ -348,8 +421,8 @@ def api_tendencia():
                 JOIN snapshot_run sr ON sr.run_id = su.run_id
                 WHERE su.taller_cercano_nombre IS NOT NULL
             """), conn)
-    except Exception as exc:
-        return _json({"error": str(exc)}, 500)
+    except Exception:
+        return _json({"error": "Error interno al procesar la solicitud"}, 500)
 
     if df.empty:
         return _json({"labels": [], "series": [], "talleres": []})
@@ -379,6 +452,7 @@ def api_tendencia():
 
 # ── Route: /api/modelos-sucursal ──────────────────────────────────────────────
 @app.route("/api/modelos-sucursal")
+@require_auth
 def api_modelos_sucursal():
     run_id, _ = _latest_run()
     if run_id is None:
@@ -424,11 +498,12 @@ def api_modelos_sucursal():
 
 # ── Route: /api/radio-search ─────────────────────────────────────────────────
 @app.route("/api/radio-search")
+@require_auth
 def api_radio_search():
     try:
         lat       = float(request.args["lat"])
         lon       = float(request.args["lon"])
-        radius_km = float(request.args.get("radius_km", 100))
+        radius_km = min(float(request.args.get("radius_km", 100)), 500.0)
     except (KeyError, ValueError):
         return _json({"error": "lat, lon y radius_km son requeridos"}, 400)
 
@@ -449,8 +524,8 @@ def api_radio_search():
                 WHERE run_id = :run_id
                   AND lat IS NOT NULL AND lon IS NOT NULL
             """), conn, params={"run_id": run_id})
-    except Exception as exc:
-        return _json({"error": f"Error al consultar la base de datos: {exc}"}, 500)
+    except Exception:
+        return _json({"error": "Error al consultar la base de datos"}, 500)
 
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
     df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
@@ -465,7 +540,7 @@ def api_radio_search():
     a      = np.sin(dlat/2)**2 + np.cos(lat_r) * np.cos(math.radians(lat)) * np.sin(dlon/2)**2
     df["distancia_km"] = (R * 2 * np.arcsin(np.sqrt(a))).round(2)
 
-    df = df[df["distancia_km"] <= radius_km].sort_values("distancia_km")
+    df = df[df["distancia_km"] <= radius_km].sort_values("distancia_km").head(1000)
     df = df.fillna("")
 
     return _json({
@@ -522,6 +597,7 @@ def _estado_mantenimiento(km_restantes: float | None) -> str:
 
 # ── Route: /api/estado-flota ──────────────────────────────────────────────────
 @app.route("/api/estado-flota")
+@require_auth
 def api_estado_flota():
     run_id, snap_ts = _latest_run()
     if run_id is None:
@@ -529,7 +605,7 @@ def api_estado_flota():
 
     with engine.connect() as conn:
         df = pd.read_sql(text("""
-            SELECT su.unit_id, su.patente, su.empresa,
+            SELECT su.unit_id, su.vin, su.patente, su.empresa,
                    COALESCE(NULLIF(su.modelo,''), su.vehicle_name) AS modelo,
                    su.taller_cercano_nombre AS taller,
                    su.distancia_taller_cercano_km,
@@ -562,6 +638,14 @@ def api_estado_flota():
 
         estado = _estado_mantenimiento(km_rest)
 
+        vin_key = str(r.get("unit_id") or r.get("vin") or "").strip().upper()
+        fallas  = _FALLAS_BY_VIN.get(vin_key, [])
+        prioridades = [f["prioridad"] for f in fallas if f.get("prioridad")]
+        prioridad_max = (
+            "Urgente" if "Urgente" in prioridades else
+            "Seguimiento" if prioridades else None
+        )
+
         rows.append({
             "unit_id":             _safe_str(r["unit_id"]),
             "patente":             _safe_str(r["patente"]),
@@ -576,6 +660,10 @@ def api_estado_flota():
             "proximo_servicio_km": None if prox_km is None else round(float(prox_km), 0),
             "km_restantes":        None if km_rest  is None else round(float(km_rest),  0),
             "estado":              estado,
+            "fallas":              fallas,
+            "fallas_count":        len(fallas),
+            "prioridad_falla":     prioridad_max,
+            "descripcion_falla":   " / ".join(f["tipo_falla"] for f in fallas if f.get("tipo_falla")) or None,
         })
 
     # Ordenar: CRITICO → ATENCION → OK → SIN_DATOS
@@ -585,19 +673,21 @@ def api_estado_flota():
     if estado_f:
         rows = [r for r in rows if r["estado"] == estado_f]
 
-    con_can  = sum(1 for r in rows if r["estado"] != "SIN_DATOS")
-    sin_can  = sum(1 for r in rows if r["estado"] == "SIN_DATOS")
-    criticos = sum(1 for r in rows if r["estado"] == "CRITICO")
-    atencion = sum(1 for r in rows if r["estado"] == "ATENCION")
-    empresas = sorted({r["empresa"] for r in rows if r["empresa"]})
+    con_can    = sum(1 for r in rows if r["estado"] != "SIN_DATOS")
+    sin_can    = sum(1 for r in rows if r["estado"] == "SIN_DATOS")
+    criticos   = sum(1 for r in rows if r["estado"] == "CRITICO")
+    atencion   = sum(1 for r in rows if r["estado"] == "ATENCION")
+    con_fallas = sum(1 for r in rows if r["fallas_count"] > 0)
+    empresas   = sorted({r["empresa"] for r in rows if r["empresa"]})
 
     return _json({
         "snap_ts": snap_ts[:16] if snap_ts else "",
         "kpis": {
-            "con_can":  con_can,
-            "sin_can":  sin_can,
-            "criticos": criticos,
-            "atencion": atencion,
+            "con_can":    con_can,
+            "sin_can":    sin_can,
+            "criticos":   criticos,
+            "atencion":   atencion,
+            "con_fallas": con_fallas,
         },
         "empresas": empresas,
         "rows":     rows,
@@ -605,6 +695,8 @@ def api_estado_flota():
 
 # ── Route: /api/export/<tipo> (CSV download) ──────────────────────────────────
 @app.route("/api/export/<tipo>")
+@require_auth
+@limiter.limit("10 per minute")
 def api_export(tipo: str):
     run_id, snap_ts = _latest_run()
     if run_id is None:
@@ -645,7 +737,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--host",     default="0.0.0.0")
     p.add_argument("--port",     type=int, default=5000)
-    p.add_argument("--no-debug", dest="debug", action="store_false", default=True)
+    p.add_argument("--no-debug", dest="debug", action="store_false", default=False)
     args = p.parse_args()
     print(f"\n  Fleet Intelligence  →  http://localhost:{args.port}\n")
     app.run(host=args.host, port=args.port, debug=args.debug)

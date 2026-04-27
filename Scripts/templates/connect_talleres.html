@@ -22,6 +22,9 @@
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 
+<!-- Supabase Auth -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
 <script>
 tailwind.config = {
     darkMode: "class",
@@ -67,6 +70,7 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
 ::-webkit-scrollbar-thumb { background: #353534; border-radius: 10px; }
 
 /* ── Glass ── */
+
 .glass { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
 
 /* ── Map container ── */
@@ -157,16 +161,47 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
 
 <body class="flex overflow-hidden" style="height:100vh">
 
+<!-- ══════════════════════════════════
+     AUTH OVERLAY
+══════════════════════════════════ -->
+<div id="auth-overlay" style="position:fixed;inset:0;z-index:9999;background:#131313;display:flex;align-items:center;justify-content:center;font-family:'Manrope',sans-serif;">
+  <div style="width:100%;max-width:380px;padding:0 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <img src="/logo.png" alt="Kaufmann" style="height:64px;object-fit:contain;" onerror="this.style.display='none'" />
+      <div style="margin-top:12px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#9c8e82;">Fleet Intelligence · Connect Latam</div>
+    </div>
+    <div style="background:#201f1f;border:1px solid #353534;border-radius:16px;padding:32px;">
+      <h2 style="font-size:20px;font-weight:700;color:#e5e2e1;margin:0 0 6px;">Iniciar sesión</h2>
+      <p style="font-size:13px;color:#9c8e82;margin:0 0 24px;">Acceso exclusivo equipo Connect</p>
+      <div id="auth-error" style="display:none;background:rgba(233,47,49,0.1);border:1px solid rgba(233,47,49,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#f87171;margin-bottom:16px;"></div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9c8e82;margin-bottom:6px;">Correo</label>
+        <input id="auth-email" type="email" placeholder="tu@email.com" autocomplete="email"
+          style="width:100%;background:#131313;border:1px solid #353534;border-radius:8px;padding:10px 13px;font-size:14px;color:#e5e2e1;font-family:inherit;outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='#f2be8c'" onblur="this.style.borderColor='#353534'" />
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9c8e82;margin-bottom:6px;">Contraseña</label>
+        <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password"
+          style="width:100%;background:#131313;border:1px solid #353534;border-radius:8px;padding:10px 13px;font-size:14px;color:#e5e2e1;font-family:inherit;outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='#f2be8c'" onblur="this.style.borderColor='#353534'" />
+      </div>
+      <button id="auth-btn" onclick="doLogin()"
+        style="width:100%;background:#f2be8c;color:#482904;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:background .2s;"
+        onmouseover="this.style.background='#d4a373'" onmouseout="this.style.background='#f2be8c'">
+        Ingresar
+      </button>
+    </div>
+    <p style="text-align:center;font-size:11px;color:#50453b;margin-top:16px;">¿Problemas para acceder? Contacta a tu administrador.</p>
+  </div>
+</div>
+
 <!-- Mobile overlay + sidebar -->
 <div id="mobile-overlay" onclick="closeMobileMenu()"></div>
 <div id="mobile-sidebar">
     <div class="px-6 pt-6 pb-4 flex items-center justify-between border-b border-[#353534]/25">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center"
-                 style="background:linear-gradient(135deg,#f2be8c,#a0724a);">
-                <span class="icon icon-fill text-[#482904]" style="font-size:16px;">directions_bus</span>
-            </div>
-            <span class="serif text-[#f2be8c] font-bold text-base">Fleet Intelligence</span>
+        <div>
+            <img src="/logo.png" alt="Logo Kaufmann" class="w-full object-contain" style="max-height:112px;"/>
         </div>
         <button onclick="closeMobileMenu()" class="text-[#e5e2e1]/40 hover:text-[#e5e2e1]/80">
             <span class="icon">close</span>
@@ -208,17 +243,9 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
        style="width:272px;">
 
     <!-- Brand -->
-    <div class="px-8 pt-8 mb-8">
-        <div class="flex items-center gap-3 mb-3">
-            <div class="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center"
-                 style="background:linear-gradient(135deg,#f2be8c,#a0724a);">
-                <span class="icon icon-fill text-[#482904]" style="font-size:18px;">directions_bus</span>
-            </div>
-            <div class="serif text-[#f2be8c] font-bold text-lg leading-tight">Fleet Intelligence</div>
-        </div>
-        <div class="text-[9px] text-[#e5e2e1]/30 font-light tracking-[0.2em] uppercase">
-            Kaufmann · The Digital Curator
-        </div>
+    <div class="px-5 pt-8 mb-8">
+        <div class="mb-3">
+            <img src="/logo.png" alt="Logo Kaufmann" class="w-full object-contain" style="max-height:160px;"/>
     </div>
 
     <!-- Nav -->
@@ -681,13 +708,23 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                             <div class="serif text-[#f2be8c] font-bold text-base">
                                 Modelos por taller
                             </div>
-                            <div class="flex items-center gap-2">
-                                <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Taller</span>
-                                <select id="mod-suc-filter"
-                                    class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
-                                    onchange="renderModSucChart()">
-                                    <option value="__all__">Todos</option>
-                                </select>
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Taller</span>
+                                    <select id="mod-suc-filter"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Modelo</span>
+                                    <select id="mod-suc-filter-modelo"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                         <div id="mod-suc-loading" class="loading-state animate-pulse">Cargando modelos...</div>
@@ -981,7 +1018,7 @@ function initDeck() {
 }
 
 function loadMapData() {
-    fetch('/api/data')
+    authFetch('/api/data')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => {
             if (data.error) throw new Error(data.error);
@@ -1195,7 +1232,7 @@ async function runRadioSearch() {
     // 2. Buscar unidades en el radio
     let data;
     try {
-        const resp = await fetch(`/api/radio-search?lat=${lat}&lon=${lon}&radius_km=${radius}`);
+        const resp = await authFetch(`/api/radio-search?lat=${lat}&lon=${lon}&radius_km=${radius}`);
         const raw  = await resp.text();
         try { data = JSON.parse(raw); } catch (_) {
             throw new Error(`Error del servidor (${resp.status}). Revisa la consola del servidor Flask.`);
@@ -1363,7 +1400,7 @@ function downloadSearchCSV() {
 let _ejCharts = {};
 
 function loadEjecutivo() {
-    fetch('/api/ejecutivo')
+    authFetch('/api/ejecutivo')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => renderEjecutivo(data))
         .catch(err => {
@@ -1616,7 +1653,7 @@ function loadModSucursal() {
     document.getElementById('mod-suc-error').style.display   = 'none';
     document.getElementById('mod-suc-chart-wrap').style.display = 'none';
 
-    fetch('/api/modelos-sucursal')
+    authFetch('/api/modelos-sucursal')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => {
             _modSucData = data;
@@ -1637,6 +1674,15 @@ function loadModSucursal() {
                 sel.appendChild(opt);
             });
 
+            // Poblar filtro de modelo
+            const selMod = document.getElementById('mod-suc-filter-modelo');
+            selMod.innerHTML = '<option value="__all__">Todos</option>';
+            (data.modelos || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selMod.appendChild(opt);
+            });
+
             document.getElementById('mod-suc-chart-wrap').style.display = 'block';
             renderModSucChart();
             renderModSucTable();
@@ -1651,13 +1697,15 @@ function loadModSucursal() {
 
 function renderModSucChart() {
     if (!_modSucData) return;
-    const tallerFiltro = document.getElementById('mod-suc-filter').value;
+    const tallerFiltro  = document.getElementById('mod-suc-filter').value;
+    const modeloFiltro  = document.getElementById('mod-suc-filter-modelo').value;
     const { talleres, modelos, rows } = _modSucData;
 
     const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
 
-    // Filtrar modelos con al menos 1 unidad en los talleres activos
+    // Filtrar modelos: por filtro de modelo y por tener unidades en talleres activos
     const modFiltrados = modelos.filter(m => {
+        if (modeloFiltro !== '__all__' && m !== modeloFiltro) return false;
         const row = rows.find(r => r.modelo === m);
         return row && talleresActivos.some(t => (row[t] || 0) > 0);
     }).slice(0, 20);
@@ -1711,16 +1759,32 @@ function renderModSucChart() {
 
 function renderModSucTable() {
     if (!_modSucData) return;
+    const tallerFiltro = document.getElementById('mod-suc-filter').value;
+    const modeloFiltro = document.getElementById('mod-suc-filter-modelo').value;
     const { talleres, rows } = _modSucData;
 
-    // Columnas: Modelo | taller1 | taller2 | ... | Total
+    const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
+
+    // Filtrar filas por modelo seleccionado
+    const rowsFiltrados = rows.filter(r => {
+        if (modeloFiltro !== '__all__' && r.modelo !== modeloFiltro) return false;
+        return talleresActivos.some(t => (r[t] || 0) > 0);
+    });
+
+    // Recalcular total con solo los talleres activos
+    const rowsConTotal = rowsFiltrados.map(r => ({
+        ...r,
+        total: talleresActivos.reduce((acc, t) => acc + (r[t] || 0), 0),
+    }));
+
+    // Columnas: Modelo | talleres activos | Total
     const cols = [
         { key: 'modelo', label: 'Modelo' },
-        ...talleres.map(t => ({ key: t, label: t, fmt: fmt })),
+        ...talleresActivos.map(t => ({ key: t, label: t, fmt: fmt })),
         { key: 'total', label: 'Total', fmt: fmt },
     ];
     document.getElementById('mod-suc-table').innerHTML =
-        buildTable(cols, rows);
+        buildTable(cols, rowsConTotal);
 }
 
 
@@ -1738,7 +1802,7 @@ function loadDetalle(params) {
         Object.fromEntries(Object.entries(params).filter(([, v]) => v && v !== '1000'))
     ).toString();
 
-    fetch('/api/detalle' + (qs ? '?' + qs : ''))
+    authFetch('/api/detalle' + (qs ? '?' + qs : ''))
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => renderDetalle(data))
         .catch(err => {
@@ -1815,7 +1879,7 @@ let _tendData = null;
 let _tendChart = null;
 
 function loadTendencia() {
-    fetch('/api/tendencia')
+    authFetch('/api/tendencia')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => renderTendencia(data))
         .catch(err => {
@@ -1996,7 +2060,7 @@ function loadEstadoFlota() {
     document.getElementById('ef-table').style.display   = 'none';
     document.getElementById('ef-legend').style.display  = 'none';
 
-    fetch('/api/estado-flota')
+    authFetch('/api/estado-flota')
         .then(r => r.json())
         .then(data => {
             if (data.error) throw new Error(data.error);
@@ -2170,9 +2234,88 @@ function escHtml(s) {
 
 
 // ═══════════════════════════════════════════════════════
-//  BOOT
+//  AUTH FETCH — agrega Bearer token a cada llamada /api/*
 // ═══════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', initDeck);
+async function authFetch(url, opts = {}) {
+    const { data: { session } } = await _sbGeo.auth.getSession();
+    const headers = { ...(opts.headers || {}) };
+    if (session && session.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+    const resp = await fetch(url, { ...opts, headers });
+    if (resp.status === 401) {
+        document.getElementById('auth-overlay').style.display = 'flex';
+        throw new Error('Session expired');
+    }
+    return resp;
+}
+
+// ═══════════════════════════════════════════════════════
+//  AUTH + BOOT
+// ═══════════════════════════════════════════════════════
+const _SUPABASE_URL  = 'https://isdsaousyjpokzffydqm.supabase.co';
+const _SUPABASE_ANON = 'sb_publishable_iZ8j96IMuRbSQqk3VKpI9Q_ZiUZ9D0G';
+const _sbGeo = supabase.createClient(_SUPABASE_URL, _SUPABASE_ANON);
+
+function _showApp() {
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function _initAuth() {
+    // 1. ¿Vienen tokens por URL? (redirect desde portalConnect con sesión activa)
+    const params = new URLSearchParams(window.location.search);
+    const at = params.get('access_token');
+    const rt = params.get('refresh_token');
+
+    if (at && rt) {
+        const { error } = await _sbGeo.auth.setSession({ access_token: at, refresh_token: rt });
+        window.history.replaceState({}, '', window.location.pathname);
+        if (!error) { _showApp(); initDeck(); return; }
+    }
+
+    // 2. ¿Ya hay sesión activa en este browser?
+    const { data: { session } } = await _sbGeo.auth.getSession();
+    if (session) { _showApp(); initDeck(); return; }
+
+    // 3. Sin sesión → el overlay de login queda visible, no se llama initDeck
+}
+
+window.doLogin = async function() {
+    const email    = (document.getElementById('auth-email').value || '').trim();
+    const password = (document.getElementById('auth-password').value || '').trim();
+    const errEl    = document.getElementById('auth-error');
+    const btn      = document.getElementById('auth-btn');
+
+    errEl.style.display = 'none';
+    if (!email || !password) {
+        errEl.textContent = 'Completa correo y contraseña.';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Verificando…';
+
+    const { error } = await _sbGeo.auth.signInWithPassword({ email: email, password: password });
+    if (error) {
+        errEl.textContent = 'Credenciales incorrectas. Verifica tu correo y contraseña.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Ingresar';
+        return;
+    }
+
+    _showApp();
+    initDeck();
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('auth-password').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') window.doLogin();
+    });
+    _initAuth();
+});
 </script>
 </body>
 </html>
