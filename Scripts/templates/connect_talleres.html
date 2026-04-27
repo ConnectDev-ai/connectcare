@@ -2236,14 +2236,20 @@ function escHtml(s) {
 // ═══════════════════════════════════════════════════════
 //  AUTH FETCH — agrega Bearer token a cada llamada /api/*
 // ═══════════════════════════════════════════════════════
+let _activeToken = null; // token capturado en doLogin, evita race con getSession()
+
 async function authFetch(url, opts = {}) {
-    const { data: { session } } = await _sbGeo.auth.getSession();
-    const headers = { ...(opts.headers || {}) };
-    if (session && session.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+    // Usar token en memoria primero; si no hay, intentar getSession()
+    let token = _activeToken;
+    if (!token) {
+        const { data: { session } } = await _sbGeo.auth.getSession();
+        token = session?.access_token || null;
     }
+    const headers = { ...(opts.headers || {}) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const resp = await fetch(url, { ...opts, headers });
     if (resp.status === 401) {
+        _activeToken = null;
         document.getElementById('auth-overlay').style.display = 'flex';
         throw new Error('Session expired');
     }
@@ -2269,14 +2275,14 @@ async function _initAuth() {
     const rt = params.get('refresh_token');
 
     if (at && rt) {
-        const { error } = await _sbGeo.auth.setSession({ access_token: at, refresh_token: rt });
+        const { data, error } = await _sbGeo.auth.setSession({ access_token: at, refresh_token: rt });
         window.history.replaceState({}, '', window.location.pathname);
-        if (!error) { _showApp(); initDeck(); return; }
+        if (!error) { _activeToken = data.session?.access_token || null; _showApp(); initDeck(); return; }
     }
 
     // 2. ¿Ya hay sesión activa en este browser?
     const { data: { session } } = await _sbGeo.auth.getSession();
-    if (session) { _showApp(); initDeck(); return; }
+    if (session) { _activeToken = session.access_token; _showApp(); initDeck(); return; }
 
     // 3. Sin sesión → el overlay de login queda visible, no se llama initDeck
 }
@@ -2297,7 +2303,7 @@ window.doLogin = async function() {
     btn.disabled = true;
     btn.textContent = 'Verificando…';
 
-    const { error } = await _sbGeo.auth.signInWithPassword({ email: email, password: password });
+    const { data, error } = await _sbGeo.auth.signInWithPassword({ email: email, password: password });
     if (error) {
         errEl.textContent = 'Credenciales incorrectas. Verifica tu correo y contraseña.';
         errEl.style.display = 'block';
@@ -2306,6 +2312,7 @@ window.doLogin = async function() {
         return;
     }
 
+    _activeToken = data.session?.access_token || null;
     _showApp();
     initDeck();
 };
