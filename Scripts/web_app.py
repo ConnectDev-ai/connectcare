@@ -18,6 +18,10 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+import time
+import urllib.request
+import urllib.error
+
 try:
     import jwt as pyjwt
 except ImportError:
@@ -63,8 +67,13 @@ for _old, _new in [
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 # ── Supabase JWT ──────────────────────────────────────────────────────────────
-# Obtener en: Supabase Dashboard → Settings → API → JWT Secret
+SUPABASE_URL        = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_ANON_KEY   = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+
+# Cache de tokens válidos: {token: expiry_epoch}
+_token_cache: dict[str, float] = {}
+_TOKEN_CACHE_TTL = 300  # segundos
 
 # ── Fallas DTC ────────────────────────────────────────────────────────────────
 def _load_fallas() -> dict[str, list[dict]]:
@@ -110,21 +119,53 @@ def add_security_headers(resp: Response) -> Response:
     resp.headers["Referrer-Policy"]        = "strict-origin-when-cross-origin"
     return resp
 
+def _verify_supabase_token(token: str) -> bool:
+    """Verifica el token contra la API de Supabase (independiente del algoritmo JWT)."""
+    now = time.time()
+    cached = _token_cache.get(token)
+    if cached and cached > now:
+        return True
+
+    if SUPABASE_URL and SUPABASE_ANON_KEY:
+        try:
+            req = urllib.request.Request(
+                f"{SUPABASE_URL}/auth/v1/user",
+                headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    _token_cache[token] = now + _TOKEN_CACHE_TTL
+                    return True
+        except urllib.error.HTTPError:
+            return False
+        except Exception:
+            return False
+        return False
+
+    # Fallback: validación local HS256 (solo si no hay SUPABASE_URL configurado)
+    if SUPABASE_JWT_SECRET and pyjwt is not None:
+        try:
+            pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+            _token_cache[token] = now + _TOKEN_CACHE_TTL
+            return True
+        except Exception:
+            return False
+
+    return True  # dev mode: sin credenciales configuradas
+
+
 def require_auth(f):
     """Valida el JWT de Supabase en el header Authorization: Bearer <token>."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not SUPABASE_JWT_SECRET or pyjwt is None:
-            return f(*args, **kwargs)  # sin secret o sin PyJWT → modo dev local
+        # Dev mode: sin ninguna credencial configurada
+        if not SUPABASE_URL and not SUPABASE_JWT_SECRET:
+            return f(*args, **kwargs)
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return _json({"error": "Unauthorized"}, 401)
         token = auth[7:]
-        try:
-            pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
-        except pyjwt.ExpiredSignatureError:
-            return _json({"error": "Session expired"}, 401)
-        except Exception:
+        if not _verify_supabase_token(token):
             return _json({"error": "Unauthorized"}, 401)
         return f(*args, **kwargs)
     return decorated
