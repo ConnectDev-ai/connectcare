@@ -18,15 +18,24 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
-import jwt as pyjwt
+try:
+    import jwt as pyjwt
+except ImportError:
+    pyjwt = None
+
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request, send_file
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from sqlalchemy import create_engine, text
 import io
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    _limiter_available = True
+except ImportError:
+    _limiter_available = False
 
 # ── Paths / env ──────────────────────────────────────────────────────────────
 BASE_DIR     = Path(__file__).resolve().parent
@@ -86,7 +95,13 @@ _FALLAS_BY_VIN: dict[str, list[dict]] = _load_fallas()
 # ── Flask ─────────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-limiter = Limiter(get_remote_address, app=app, default_limits=["300 per hour"])
+if _limiter_available:
+    limiter = Limiter(get_remote_address, app=app, default_limits=["300 per hour"],
+                      storage_uri="memory://")
+else:
+    class _NoopLimiter:
+        def limit(self, *a, **kw): return lambda f: f
+    limiter = _NoopLimiter()
 
 @app.after_request
 def add_security_headers(resp: Response) -> Response:
@@ -99,8 +114,8 @@ def require_auth(f):
     """Valida el JWT de Supabase en el header Authorization: Bearer <token>."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not SUPABASE_JWT_SECRET:
-            return f(*args, **kwargs)  # sin secret configurado → solo modo dev local
+        if not SUPABASE_JWT_SECRET or pyjwt is None:
+            return f(*args, **kwargs)  # sin secret o sin PyJWT → modo dev local
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return _json({"error": "Unauthorized"}, 401)

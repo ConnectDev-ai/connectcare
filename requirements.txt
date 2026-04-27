@@ -6,3 +6,5 @@ psycopg[binary]
 openpyxl
 requests
 python-dotenv
+PyJWT
+flask-limiter
