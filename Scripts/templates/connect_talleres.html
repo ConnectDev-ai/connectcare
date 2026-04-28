@@ -341,9 +341,28 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
             <button class="text-[#e5e2e1]/50 hover:text-[#f2be8c] transition-colors p-1">
                 <span class="icon">settings</span>
             </button>
-            <div class="w-9 h-9 rounded-full bg-[#353534] border border-[#f2be8c]/20
-                        flex items-center justify-center ml-1">
-                <span class="icon text-[#f2be8c]/60">person</span>
+            <!-- User menu -->
+            <div class="relative ml-1" id="user-menu-wrap">
+                <button onclick="toggleUserMenu()"
+                        class="w-9 h-9 rounded-full bg-[#353534] border border-[#f2be8c]/20
+                               flex items-center justify-center hover:border-[#f2be8c]/50 transition-colors"
+                        id="user-avatar">
+                    <span class="icon text-[#f2be8c]/60">person</span>
+                </button>
+                <div id="user-dropdown" style="display:none;"
+                     class="absolute right-0 top-11 w-56 bg-[#201f1f] border border-[#353534]
+                            rounded-xl shadow-2xl z-50 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-[#353534]/60">
+                        <div class="text-xs font-bold text-[#f2be8c] truncate" id="user-email-display">—</div>
+                        <div class="text-[10px] text-[#9c8e82] mt-0.5">Equipo Connect</div>
+                    </div>
+                    <button onclick="handleLogout()"
+                            class="w-full flex items-center gap-3 px-4 py-3 text-sm
+                                   text-[#e5e2e1]/70 hover:text-[#f2be8c] hover:bg-[#2a2a2a] transition-colors">
+                        <span class="icon" style="font-size:18px;">logout</span>
+                        Cerrar sesión
+                    </button>
+                </div>
             </div>
         </div>
     </header>
@@ -2268,6 +2287,40 @@ function _showApp() {
     if (overlay) overlay.style.display = 'none';
 }
 
+function _updateUserMenu(session) {
+    if (!session || !session.user) return;
+    const email = session.user.email || '';
+    const emailEl = document.getElementById('user-email-display');
+    if (emailEl) emailEl.textContent = email;
+    const avatar = document.getElementById('user-avatar');
+    if (avatar && email) {
+        avatar.innerHTML = `<span class="text-sm font-bold text-[#f2be8c]">${email.charAt(0).toUpperCase()}</span>`;
+    }
+}
+
+window.toggleUserMenu = function() {
+    const dd = document.getElementById('user-dropdown');
+    if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+};
+
+window.handleLogout = async function() {
+    await _sbGeo.auth.signOut();
+    const dd = document.getElementById('user-dropdown');
+    if (dd) dd.style.display = 'none';
+    const emailEl = document.getElementById('user-email-display');
+    if (emailEl) emailEl.textContent = '—';
+    const avatar = document.getElementById('user-avatar');
+    if (avatar) avatar.innerHTML = '<span class="icon text-[#f2be8c]/60">person</span>';
+    document.getElementById('auth-overlay').style.display = 'flex';
+};
+
+// Cierra el dropdown al hacer click fuera
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('user-menu-wrap');
+    const dd   = document.getElementById('user-dropdown');
+    if (dd && wrap && !wrap.contains(e.target)) dd.style.display = 'none';
+});
+
 async function _initAuth() {
     // 1. ¿Vienen tokens por URL? (redirect desde portalConnect con sesión activa)
     const params = new URLSearchParams(window.location.search);
@@ -2277,12 +2330,12 @@ async function _initAuth() {
     if (at && rt) {
         const { data, error } = await _sbGeo.auth.setSession({ access_token: at, refresh_token: rt });
         window.history.replaceState({}, '', window.location.pathname);
-        if (!error) { _activeToken = data.session?.access_token || null; _showApp(); initDeck(); return; }
+        if (!error) { _activeToken = data.session?.access_token || null; _updateUserMenu(data.session); _showApp(); initDeck(); return; }
     }
 
     // 2. ¿Ya hay sesión activa en este browser?
     const { data: { session } } = await _sbGeo.auth.getSession();
-    if (session) { _activeToken = session.access_token; _showApp(); initDeck(); return; }
+    if (session) { _activeToken = session.access_token; _updateUserMenu(session); _showApp(); initDeck(); return; }
 
     // 3. Sin sesión → el overlay de login queda visible, no se llama initDeck
 }
@@ -2313,6 +2366,7 @@ window.doLogin = async function() {
     }
 
     _activeToken = data.session?.access_token || null;
+    _updateUserMenu(data.session);
     _showApp();
     initDeck();
 };
