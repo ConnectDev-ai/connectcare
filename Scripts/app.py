@@ -34,7 +34,8 @@ except Exception:
     ZoneInfo = None
 
 # =========================
-# Paths / env
+# Paths / envgit commit -m "feat(ui): menu de usuario con email y 
+ # opcion cerrar sesion"
 # =========================
 BASE_DIR     = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
@@ -69,8 +70,11 @@ COPILOTO_ENDPOINT    = os.getenv("COPILOTO_ENDPOINT",
     "https://api.copiloto.ai/wicar-report/report-files/vehicle-records").strip()
 COPILOTO_SIGNIN_URL  = os.getenv("COPILOTO_SIGNIN_URL",
     "https://accounts.copiloto.ai/v1/sign-in").strip()
-COPILOTO_EMAIL       = os.getenv("COPILOTO_EMAIL",    "samuel.sanchez@grupokaufmann.com").strip()
-COPILOTO_PASSWORD    = os.getenv("COPILOTO_PASSWORD", "Copiloto_2025.").strip()
+# Preferred: static API token (skips sign-in entirely)
+COPILOTO_API_TOKEN   = os.getenv("COPILOTO_API_TOKEN", "").strip()
+# Fallback: email/password sign-in (used only when COPILOTO_API_TOKEN is not set)
+COPILOTO_EMAIL       = os.getenv("COPILOTO_EMAIL",    "").strip()
+COPILOTO_PASSWORD    = os.getenv("COPILOTO_PASSWORD", "").strip()
 
 # =========================
 # PostgreSQL
@@ -309,8 +313,8 @@ def copiloto_sign_in(session: requests.Session) -> str:
                         return data[k][kk]
     raise RuntimeError(f"No pude encontrar token. Keys={list(data.keys()) if isinstance(data,dict) else type(data)}")
 
-def fetch_vehicle_records_df(session: requests.Session, token: str, snap_tag: str) -> pd.DataFrame:
-    r = session.get(COPILOTO_ENDPOINT, headers={"Authorization": f"Bearer {token}"}, timeout=180)
+def fetch_vehicle_records_df(session: requests.Session, auth_headers: dict, snap_tag: str) -> pd.DataFrame:
+    r = session.get(COPILOTO_ENDPOINT, headers=auth_headers, timeout=180)
     r.raise_for_status()
     (OUT_DIR / f"vehicle_records_download_{snap_tag}.csv").write_bytes(r.content)
     for enc in ("utf-8-sig","utf-8","latin-1"):
@@ -621,8 +625,18 @@ def main():
     df_master = load_master_flota(MASTER_FLOTA_XLSX)
 
     with requests.Session() as session:
-        token  = copiloto_sign_in(session)
-        df_raw = fetch_vehicle_records_df(session, token, snap_tag)
+        if COPILOTO_API_TOKEN:
+            log.info("Usando COPILOTO_API_TOKEN (sin sign-in).")
+            auth_headers = {"auth": COPILOTO_API_TOKEN}
+        else:
+            if not COPILOTO_EMAIL or not COPILOTO_PASSWORD:
+                raise RuntimeError(
+                    "Debes definir COPILOTO_API_TOKEN o bien COPILOTO_EMAIL + COPILOTO_PASSWORD."
+                )
+            log.info("Autenticando con email/password en Copiloto.")
+            token = copiloto_sign_in(session)
+            auth_headers = {"Authorization": f"Bearer {token}"}
+        df_raw = fetch_vehicle_records_df(session, auth_headers, snap_tag)
 
     df_units = units_from_vehicle_records(df_raw, snap_ts)
     log.info("Unidades únicas: %s", df_units["unit_id"].nunique())

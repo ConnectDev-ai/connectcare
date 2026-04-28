@@ -30,9 +30,8 @@ jobs:
 
       - name: Run pipeline
         env:
-          COPILOTO_EMAIL:    ${{ secrets.COPILOTO_EMAIL }}
-          COPILOTO_PASSWORD: ${{ secrets.COPILOTO_PASSWORD }}
-          PGPASSWORD:        ${{ secrets.PGPASSWORD }}
+          COPILOTO_API_TOKEN: ${{ secrets.COPILOTO_API_TOKEN }}
+          PGPASSWORD:         ${{ secrets.PGPASSWORD }}
 
           PGHOST:     "ep-old-sky-am0be75w-pooler.c-5.us-east-1.aws.neon.tech"
           PGPORT:     "5432"
