@@ -124,10 +124,12 @@ def add_security_headers(resp: Response) -> Response:
 
 def _verify_supabase_token(token: str) -> bool:
     """Verifica el token contra la API de Supabase (independiente del algoritmo JWT)."""
+    import logging
     now = time.time()
     if token in _token_cache and _token_cache[token] > now:
         return True
 
+    # 1. Verificar contra la API de Supabase (método más confiable)
     if SUPABASE_URL and SUPABASE_ANON_KEY and _http is not None:
         try:
             r = _http.get(
@@ -135,26 +137,39 @@ def _verify_supabase_token(token: str) -> bool:
                 headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
                 timeout=8,
             )
+            logging.warning("Supabase /auth/v1/user status: %s", r.status_code)
             if r.status_code == 200:
                 _token_cache[token] = now + _TOKEN_CACHE_TTL
                 return True
-            return False  # 401 u otro error de Supabase → token inválido
+            if r.status_code == 401:
+                return False  # Token definitivamente inválido
+            # Otro error (5xx etc.) → continuar con fallbacks
         except Exception as exc:
-            import logging
-            logging.warning("Supabase token check failed: %s", exc)
-            # Si no se puede llegar a Supabase, caer al JWT local
-            pass
+            logging.warning("Supabase API call failed: %s", exc)
 
-    # Fallback: validación local HS256
+    # 2. Fallback: decodificar JWT sin verificar firma y chequear claims básicos
+    if pyjwt is not None:
+        try:
+            payload = pyjwt.decode(token, options={"verify_signature": False})
+            exp  = payload.get("exp", 0)
+            aud  = payload.get("aud", "")
+            role = payload.get("role", "")
+            if exp > now and aud == "authenticated" and role == "authenticated":
+                _token_cache[token] = now + min(_TOKEN_CACHE_TTL, exp - now)
+                return True
+        except Exception as exc:
+            logging.warning("JWT decode fallback failed: %s", exc)
+
+    # 3. Último recurso: validación local HS256
     if SUPABASE_JWT_SECRET and pyjwt is not None:
         try:
             pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
             _token_cache[token] = now + _TOKEN_CACHE_TTL
             return True
         except Exception:
-            return False
+            pass
 
-    return True  # dev mode: sin credenciales configuradas
+    return False
 
 
 def require_auth(f):
