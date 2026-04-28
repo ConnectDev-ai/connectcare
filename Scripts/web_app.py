@@ -19,13 +19,16 @@ from pathlib import Path
 from typing import Any
 
 import time
-import urllib.request
-import urllib.error
 
 try:
     import jwt as pyjwt
 except ImportError:
     pyjwt = None
+
+try:
+    import requests as _http
+except ImportError:
+    _http = None
 
 import numpy as np
 import pandas as pd
@@ -122,27 +125,27 @@ def add_security_headers(resp: Response) -> Response:
 def _verify_supabase_token(token: str) -> bool:
     """Verifica el token contra la API de Supabase (independiente del algoritmo JWT)."""
     now = time.time()
-    cached = _token_cache.get(token)
-    if cached and cached > now:
+    if token in _token_cache and _token_cache[token] > now:
         return True
 
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
+    if SUPABASE_URL and SUPABASE_ANON_KEY and _http is not None:
         try:
-            req = urllib.request.Request(
+            r = _http.get(
                 f"{SUPABASE_URL}/auth/v1/user",
                 headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
+                timeout=8,
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                if resp.status == 200:
-                    _token_cache[token] = now + _TOKEN_CACHE_TTL
-                    return True
-        except urllib.error.HTTPError:
-            return False
-        except Exception:
-            return False
-        return False
+            if r.status_code == 200:
+                _token_cache[token] = now + _TOKEN_CACHE_TTL
+                return True
+            return False  # 401 u otro error de Supabase → token inválido
+        except Exception as exc:
+            import logging
+            logging.warning("Supabase token check failed: %s", exc)
+            # Si no se puede llegar a Supabase, caer al JWT local
+            pass
 
-    # Fallback: validación local HS256 (solo si no hay SUPABASE_URL configurado)
+    # Fallback: validación local HS256
     if SUPABASE_JWT_SECRET and pyjwt is not None:
         try:
             pyjwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
