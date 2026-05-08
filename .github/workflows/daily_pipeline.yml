@@ -35,6 +35,7 @@ jobs:
           COPILOTO_PASSWORD:  ${{ secrets.COPILOTO_PASSWORD }}
           PGPASSWORD:         ${{ secrets.PGPASSWORD }}
 
+          DATABASE_URL: "postgresql+psycopg://neondb_owner:${{ secrets.PGPASSWORD }}@ep-old-sky-am0be75w-pooler.c-5.us-east-1.aws.neon.tech:5432/neondb?sslmode=require"
           PGHOST:     "ep-old-sky-am0be75w-pooler.c-5.us-east-1.aws.neon.tech"
           PGPORT:     "5432"
           PGDATABASE: "neondb"
