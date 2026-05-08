@@ -66,8 +66,13 @@ There is no test suite. This is a data pipeline + API project with no automated 
 | `PREFER_VIN` | Use VIN as primary unit key, IMEI as fallback (default `1`) |
 | `TALLERES_XLSX` | Override path to talleres.xlsx |
 | `MASTER_FLOTA_XLSX` | Override path to master_Flota.xlsx |
+| `SUPABASE_URL` | Supabase project URL for JWT validation via `/auth/v1/user` |
+| `SUPABASE_ANON_KEY` | Supabase anon key sent as `apikey` header during token validation |
+| `SUPABASE_JWT_SECRET` | Last-resort local HS256 JWT verification (fallback only) |
 
 **DB URL coercion**: Both `app.py` and `web_app.py` normalize any `postgres://` or `postgresql+pg8000://` prefix to `postgresql+psycopg://` automatically. Always use the `psycopg` driver.
+
+**Dev mode auth**: If neither `SUPABASE_URL` nor `SUPABASE_JWT_SECRET` is set, `require_auth` is a no-op — all API routes are open. This is the default for local development.
 
 ## Architecture
 
@@ -79,16 +84,16 @@ Scripts/app.py  ←  Data/master_Flota.xlsx + Data/talleres.xlsx
     ↓
 PostgreSQL/PostGIS (Neon in production, local Docker for dev)
     ↓
-Scripts/web_app.py  (Flask REST API on /api/*)
-    ↓
-Streamlit viewers  OR  Scripts/templates/connect_talleres.html
+Scripts/web_app.py  (Flask REST API on /api/*)          Scripts/viewer_hex.py
+    ↓                                                    (connects to DB directly,
+Scripts/templates/connect_talleres.html                   not via Flask)
 ```
 
 ### Key Files
 
 - **`Scripts/app.py`** — Daily pipeline. Authenticates with Copiloto, fetches vehicle records CSV, enriches with fleet/workshop master data, runs vectorized Haversine distance calculations, writes to the four DB tables, and outputs CSVs to `Scripts/out/` (gitignored, auto-created).
 - **`Scripts/web_app.py`** — Flask API. Reads only from DB (never calls Copiloto). All routes resolve the latest snapshot via `_latest_run()` before querying. Serves `connect_talleres.html` at `/`.
-- **`Scripts/viewer_hex.py`** — Primary Streamlit UI ("Fleet Intelligence"). Dark theme, pydeck hexagon layers, Material Symbols icons. Uses the same DB via SQLAlchemy.
+- **`Scripts/viewer_hex.py`** — Primary Streamlit UI ("Fleet Intelligence"). Dark theme, pydeck hexagon layers, Material Symbols icons. Connects to the DB via SQLAlchemy directly — it does **not** go through the Flask API.
 - **`Scripts/templates/connect_talleres.html`** — Standalone SPA with no build step. Uses MapLibre GL + deck.gl + Chart.js + Tailwind CSS (all CDN). Consumes the same `/api/*` endpoints.
 
 ### Database Schema
@@ -114,7 +119,9 @@ The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created 
 | `GET /api/modelos-sucursal` | Vehicle model matrix by workshop |
 | `GET /api/radio-search` | Ad-hoc radius search: `?lat=&lon=&radius_km=` — vectorized Haversine, no PostGIS |
 | `GET /api/estado-flota` | Maintenance state from OBD odometer vs brand thresholds, merged with DTC faults |
-| `GET /api/export/<tipo>` | Full CSV download (`units` or `talleres`) — use instead of `/api/detalle` for complete data |
+| `GET /api/export/<tipo>` | Full CSV download: `tipo` must be `units`, `detalle`, or `cobertura` — use instead of `/api/detalle` for complete data |
+
+All routes require `Authorization: Bearer <supabase_token>` in production. Rate limit: 300 req/hour globally, 10/min on `/api/export`.
 
 ### Key Implementation Patterns
 
@@ -126,9 +133,11 @@ The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created 
 
 **Coordinate swap guard**: `_fix_coords()` in `web_app.py` detects and corrects swapped lat/lon values by checking whether coordinates fall within Chilean bounding boxes (`lat ∈ [-56, -17]`, `lon ∈ [-76, -66]`).
 
-**Maintenance thresholds**: `_UMBRALES_KM` in `web_app.py` maps truck brands to service interval km (Volvo/Scania = 40,000 km, Toyota = 10,000 km, Komatsu = 2,000 km). Detection is by substring match against the `modelo` field.
+**Maintenance thresholds**: `_UMBRALES_KM` in `web_app.py` maps truck brands to service interval km. Detection is by substring match against the `modelo` field. The full dict covers FREIGHTLINER, KENWORTH, PETERBILT, SCANIA, VOLVO, MERCEDES, MAN, DAF, IVECO, FORD, TOYOTA, KOMATSU, CATERPILLAR, and BOMAG; default is 20,000 km for unknown brands.
 
-**DTC fault data**: `web_app.py` loads the most recent `Data/reporte_fallas_*.xlsx` at module startup into `_FALLAS_BY_VIN` (keyed by VIN). Required columns: `vin`, `affected_parameter`, `PRIORIDAD`. Only the lexicographically last file is loaded.
+**DTC fault data**: `web_app.py` loads the most recent `Data/reporte_fallas_*.xlsx` at module startup into `_FALLAS_BY_VIN` (keyed by VIN). Required columns: `vin`, `affected_parameter`, `PRIORIDAD`. Only the lexicographically last file is loaded. **Requires a server restart to pick up a new file.**
+
+**Supabase token verification** (`_verify_supabase_token`): three-tier fallback — (1) live call to `SUPABASE_URL/auth/v1/user`, (2) JWT decode without signature check (validates `exp`, `aud`, `role` claims), (3) local HS256 verify with `SUPABASE_JWT_SECRET`. Valid tokens are cached for 5 minutes.
 
 ### Streamlit Theme
 

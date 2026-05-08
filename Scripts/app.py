@@ -36,7 +36,7 @@ except Exception:
 # =========================
 # Paths / envgit commit -m "feat(ui): menu de usuario con email y 
  # opcion cerrar sesion"
-# =========================
+# =git========================
 BASE_DIR     = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 DATA_DIR     = PROJECT_ROOT / "Data"
