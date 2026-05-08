@@ -58,6 +58,7 @@ tailwind.config = {
 <style>
 /* ── Base ── */
 *, *::before, *::after { box-sizing: border-box; }
+:root { color-scheme: dark; }
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; }
 .serif { font-family: 'Noto Serif', serif; }
@@ -912,7 +913,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
 
                 <!-- Filters -->
                 <div class="section-card mb-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Empresa</label>
                             <select id="ef-empresa" onchange="applyEstadoFlotaFilter()">
@@ -920,13 +921,23 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                             </select>
                         </div>
                         <div>
-                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado</label>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado mantenimiento</label>
                             <select id="ef-estado" onchange="applyEstadoFlotaFilter()">
                                 <option value="">Todos</option>
                                 <option value="CRITICO">Crítico</option>
                                 <option value="ATENCION">Atención</option>
                                 <option value="OK">OK</option>
                                 <option value="SIN_DATOS">Sin datos CAN</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Fallas DTC</label>
+                            <select id="ef-dtc" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas</option>
+                                <option value="urgente">🔴 Urgente</option>
+                                <option value="seguimiento">🟡 Seguimiento</option>
+                                <option value="con_falla">Con falla (cualquiera)</option>
+                                <option value="sin_falla">Sin fallas</option>
                             </select>
                         </div>
                         <div>
@@ -2213,11 +2224,16 @@ function applyEstadoFlotaFilter() {
     if (!_efData) return;
     const emp    = document.getElementById('ef-empresa').value;
     const estado = document.getElementById('ef-estado').value;
+    const dtc    = document.getElementById('ef-dtc').value;
     const q      = document.getElementById('ef-q').value.trim().toUpperCase();
 
     let rows = _efData.rows;
     if (emp)    rows = rows.filter(r => r.empresa === emp);
     if (estado) rows = rows.filter(r => r.estado  === estado);
+    if (dtc === 'urgente')     rows = rows.filter(r => r.prioridad_falla === 'Urgente');
+    if (dtc === 'seguimiento') rows = rows.filter(r => r.prioridad_falla === 'Seguimiento');
+    if (dtc === 'con_falla')   rows = rows.filter(r => r.fallas_count > 0);
+    if (dtc === 'sin_falla')   rows = rows.filter(r => !r.fallas_count || r.fallas_count === 0);
     if (q)      rows = rows.filter(r =>
         (r.patente  || '').toUpperCase().includes(q) ||
         (r.unit_id  || '').toUpperCase().includes(q) ||
