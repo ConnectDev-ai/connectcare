@@ -878,7 +878,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
             <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
 
                 <!-- KPI Cards -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5" id="ef-kpis" style="display:none!important">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5" id="ef-kpis" style="display:none!important">
                     <div class="section-card text-center">
                         <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Con telemetría CAN</div>
                         <div class="serif text-2xl font-bold text-[#f2be8c]" id="ef-con-can">—</div>
@@ -894,6 +894,10 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4); }
                     <div class="section-card text-center border border-yellow-500/20">
                         <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Atención (&le;5.000 km)</div>
                         <div class="serif text-2xl font-bold text-yellow-400" id="ef-atencion">—</div>
+                    </div>
+                    <div class="section-card text-center border border-orange-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Con fallas DTC</div>
+                        <div class="serif text-2xl font-bold text-orange-400" id="ef-con-fallas">—</div>
                     </div>
                 </div>
 
@@ -2087,11 +2091,12 @@ function loadEstadoFlota() {
 
             // KPI cards
             const k = data.kpis;
-            document.getElementById('ef-con-can').textContent  = fmt(k.con_can);
-            document.getElementById('ef-sin-can').textContent  = fmt(k.sin_can);
-            document.getElementById('ef-criticos').textContent = fmt(k.criticos);
-            document.getElementById('ef-atencion').textContent = fmt(k.atencion);
-            document.getElementById('ef-kpis').style.cssText   = 'display:grid!important';
+            document.getElementById('ef-con-can').textContent    = fmt(k.con_can);
+            document.getElementById('ef-sin-can').textContent    = fmt(k.sin_can);
+            document.getElementById('ef-criticos').textContent   = fmt(k.criticos);
+            document.getElementById('ef-atencion').textContent   = fmt(k.atencion);
+            document.getElementById('ef-con-fallas').textContent = fmt(k.con_fallas);
+            document.getElementById('ef-kpis').style.cssText     = 'display:grid!important';
 
             // Empresa select
             const empSel = document.getElementById('ef-empresa');
@@ -2120,6 +2125,7 @@ function renderEstadoFlotaTable(rows) {
     const html = `<table class="data-table">
         <thead><tr>
             <th>Estado</th>
+            <th>Fallas DTC</th>
             <th>Patente</th>
             <th>Empresa</th>
             <th>Modelo</th>
@@ -2144,8 +2150,17 @@ function renderEstadoFlotaTable(rows) {
                 kmRest = `<span class="${cls}">${fmt(r.km_restantes)} km</span>`;
             }
             const umbral = r.umbral_km != null ? `${fmt(r.umbral_km)} km<br><span class="text-[10px] text-[#e5e2e1]/30">${r.marca_detectada}</span>` : '—';
+            let fallaCell = '<span class="text-[#e5e2e1]/25">—</span>';
+            if (r.fallas_count > 0) {
+                const prioBadge = r.prioridad_falla === 'Urgente'
+                    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">Urgente</span>`
+                    : `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Seguimiento</span>`;
+                const desc = r.descripcion_falla ? `<div class="text-[10px] text-[#e5e2e1]/45 mt-0.5" style="white-space:normal;max-width:180px">${escHtml(r.descripcion_falla)}</div>` : '';
+                fallaCell = `<div>${prioBadge} <span class="text-[10px] text-[#e5e2e1]/50 ml-1">${r.fallas_count}</span>${desc}</div>`;
+            }
             return `<tr>
                 <td>${badge}</td>
+                <td>${fallaCell}</td>
                 <td class="font-mono">${escHtml(r.patente || '—')}</td>
                 <td>${escHtml(r.empresa || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
