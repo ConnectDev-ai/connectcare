@@ -1,0 +1,131 @@
+{
+  "info": {
+    "_postman_id": "d9269b24-a3db-4da1-a3f6-dead64d0c859",
+    "name": "Geotab-Divemotor",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "45463362",
+    "_collection_link": "https://go.postman.co/collection/45463362-d9269b24-a3db-4da1-a3f6-dead64d0c859?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Authenticate",
+      "protocolProfileBehavior": {
+        "disabledSystemHeaders": {}
+      },
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"method\": \"Authenticate\",\r\n    \"params\": {\r\n        \"userName\": \"connect_integration\",\r\n        \"password\": \"Kaufm4nn2026#\",\r\n        \"database\": \"divemotor_colombia\"\r\n    }\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://my.geotab.com/apiv1",
+          "protocol": "https",
+          "host": [
+            "my",
+            "geotab",
+            "com"
+          ],
+          "path": [
+            "apiv1"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "DeviceStatusInfo",
+      "protocolProfileBehavior": {
+        "disabledSystemHeaders": {}
+      },
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"method\": \"Get\",\r\n    \"params\": {\r\n        \"typeName\": \"DeviceStatusInfo\",\r\n        \"propertySelector\": {\r\n            \"fields\": [\r\n                \"device\",\r\n                \"latitude\",\r\n                \"longitude\",\r\n                \"speed\",\r\n                \"DateTime\"\r\n            ]\r\n        },\r\n        \"credentials\": {\r\n            \"database\": \"divemotor_colombia\",\r\n            \"sessionId\": \"VyZXVuZgJZ1FGc1wcF-tPQ\",\r\n            \"userName\": \"connect_integration\"\r\n        }\r\n    }\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://my.geotab.com/apiv1",
+          "protocol": "https",
+          "host": [
+            "my",
+            "geotab",
+            "com"
+          ],
+          "path": [
+            "apiv1"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Device",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              ""
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disabledSystemHeaders": {}
+      },
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"method\": \"Get\",\r\n    \"params\": {\r\n        \"typeName\": \"Device\",\r\n        \"propertySelector\": {\r\n            \"fields\": [\r\n                \"id\",\r\n                \"name\",\r\n                \"licensePlate\"\r\n            ]\r\n        },\r\n        \"credentials\": {\r\n            \"database\": \"divemotor_colombia\",\r\n            \"sessionId\": \"VyZXVuZgJZ1FGc1wcF-tPQ\",\r\n            \"userName\": \"connect_integration\"\r\n        }\r\n    }\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://my.geotab.com/apiv1",
+          "protocol": "https",
+          "host": [
+            "my",
+            "geotab",
+            "com"
+          ],
+          "path": [
+            "apiv1"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}
