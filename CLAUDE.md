@@ -66,6 +66,10 @@ There is no test suite. This is a data pipeline + API project with no automated 
 | `PREFER_VIN` | Use VIN as primary unit key, IMEI as fallback (default `1`) |
 | `TALLERES_XLSX` | Override path to talleres.xlsx |
 | `MASTER_FLOTA_XLSX` | Override path to master_Flota.xlsx |
+| `GEOTAB_DATABASES` | Comma-separated Geotab database names (e.g. `divemotor_colombia,divemotor,divemotor_buses`). Falls back to legacy `GEOTAB_DATABASE` |
+| `GEOTAB_USERNAME` | Geotab API username (shared across all databases) |
+| `GEOTAB_PASSWORD` | Geotab API password |
+| `GEOTAB_SERVER` | Geotab API host (default `my.geotab.com`) |
 | `SUPABASE_URL` | Supabase project URL for JWT validation via `/auth/v1/user` |
 | `SUPABASE_ANON_KEY` | Supabase anon key sent as `apikey` header during token validation |
 | `SUPABASE_JWT_SECRET` | Last-resort local HS256 JWT verification (fallback only) |

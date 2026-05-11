@@ -80,9 +80,12 @@ COPILOTO_PASSWORD    = os.getenv("COPILOTO_PASSWORD", "").strip()
 # Geotab
 # =========================
 GEOTAB_SERVER   = os.getenv("GEOTAB_SERVER",   "my.geotab.com").strip()
-GEOTAB_DATABASE = os.getenv("GEOTAB_DATABASE", "").strip()
 GEOTAB_USERNAME = os.getenv("GEOTAB_USERNAME", "").strip()
 GEOTAB_PASSWORD = os.getenv("GEOTAB_PASSWORD", "").strip()
+# GEOTAB_DATABASES: comma-separated list of databases (e.g. "divemotor_colombia,divemotor,divemotor_buses")
+# Falls back to legacy GEOTAB_DATABASE for backward compatibility.
+_raw_dbs = os.getenv("GEOTAB_DATABASES", "") or os.getenv("GEOTAB_DATABASE", "")
+GEOTAB_DATABASES: list[str] = [d.strip() for d in _raw_dbs.split(",") if d.strip()]
 
 # =========================
 # PostgreSQL
@@ -620,18 +623,14 @@ def insert_snapshot_taller_exclusive(engine, run_id, snap_ts, df_cov):
 # =========================
 # Geotab
 # =========================
-def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
-    """Fetches DeviceStatusInfo + Device from Geotab API and returns a normalized DataFrame."""
-    if not all([GEOTAB_DATABASE, GEOTAB_USERNAME, GEOTAB_PASSWORD]):
-        log.info("Geotab: credenciales no configuradas — omitiendo fuente.")
-        return pd.DataFrame()
-
+def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: str) -> pd.DataFrame:
+    """Fetches DeviceStatusInfo + Device from a single Geotab database."""
     url = f"https://{GEOTAB_SERVER}/apiv1"
 
     # 1. Autenticar para obtener sessionId fresco
     r = session.post(url, json={
         "method": "Authenticate",
-        "params": {"database": GEOTAB_DATABASE, "userName": GEOTAB_USERNAME, "password": GEOTAB_PASSWORD},
+        "params": {"database": database, "userName": GEOTAB_USERNAME, "password": GEOTAB_PASSWORD},
     }, timeout=30)
     r.raise_for_status()
     auth_result = r.json().get("result", {})
@@ -640,7 +639,7 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
     server_path = auth_result.get("path", "")
     if server_path and server_path != "ThisServer":
         url = f"https://{server_path}/apiv1"
-    log.info("Geotab: autenticado en %s como %s", url, GEOTAB_USERNAME)
+    log.info("Geotab [%s]: autenticado en %s", database, url)
 
     # 2. DeviceStatusInfo — posición actual de cada dispositivo
     r = session.post(url, json={
@@ -653,7 +652,7 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
     }, timeout=120)
     r.raise_for_status()
     status_list = r.json().get("result", [])
-    log.info("Geotab: %s registros DeviceStatusInfo recibidos.", len(status_list))
+    log.info("Geotab [%s]: %s registros DeviceStatusInfo recibidos.", database, len(status_list))
 
     # 3. Device — VIN, patente, nombre, serial
     r = session.post(url, json={
@@ -708,11 +707,11 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
             "vehicle_name": dev.get("vehicle_name"),
             "empresa":      None,
         })
-    log.info("Geotab filtros: sin_coords=%s  sin_fecha=%s  gps_antiguo(>%sd)=%s",
-             skip_no_coords, skip_no_dt, MAX_GPS_AGE_DAYS, skip_age)
+    log.info("Geotab [%s] filtros: sin_coords=%s  sin_fecha=%s  gps_antiguo(>%sd)=%s",
+             database, skip_no_coords, skip_no_dt, MAX_GPS_AGE_DAYS, skip_age)
 
     if not rows:
-        log.info("Geotab: sin unidades dentro del rango de edad GPS.")
+        log.info("Geotab [%s]: sin unidades dentro del rango de edad GPS.", database)
         return pd.DataFrame()
 
     df = pd.DataFrame(rows)
@@ -720,8 +719,33 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
     df = df[~((df["lat"].abs() < 1e-6) & (df["lon"].abs() < 1e-6))]
     df["unit_id"] = df["unit_id"].astype(str).str.strip()
     df = df[df["unit_id"] != ""].drop_duplicates("unit_id", keep="first").reset_index(drop=True)
-    log.info("Geotab: %s unidades válidas.", len(df))
+    log.info("Geotab [%s]: %s unidades válidas.", database, len(df))
     return df
+
+
+def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
+    """Iterates over all configured Geotab databases and returns a merged DataFrame."""
+    if not all([GEOTAB_DATABASES, GEOTAB_USERNAME, GEOTAB_PASSWORD]):
+        log.info("Geotab: credenciales o bases de datos no configuradas — omitiendo fuente.")
+        return pd.DataFrame()
+
+    frames: list[pd.DataFrame] = []
+    for db in GEOTAB_DATABASES:
+        try:
+            df_db = _fetch_geotab_database(session, db, snap_ts)
+            if not df_db.empty:
+                frames.append(df_db)
+        except Exception as exc:
+            log.warning("Geotab [%s]: error al obtener unidades — %s", db, exc)
+
+    if not frames:
+        return pd.DataFrame()
+
+    df_all = pd.concat(frames, ignore_index=True)
+    df_all["unit_id"] = df_all["unit_id"].astype(str).str.strip()
+    df_all = df_all[df_all["unit_id"] != ""].drop_duplicates("unit_id", keep="first").reset_index(drop=True)
+    log.info("Geotab total (todas las bases): %s unidades únicas.", len(df_all))
+    return df_all
 
 
 # =========================

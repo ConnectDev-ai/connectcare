@@ -41,7 +41,7 @@ jobs:
           PGDATABASE: "neondb"
           PGUSER:     "neondb_owner"
 
-          GEOTAB_DATABASE: ${{ secrets.GEOTAB_DATABASE }}
+          GEOTAB_DATABASES: "divemotor_colombia,divemotor,divemotor_buses"
           GEOTAB_USERNAME: ${{ secrets.GEOTAB_USERNAME }}
           GEOTAB_PASSWORD: ${{ secrets.GEOTAB_PASSWORD }}
 
