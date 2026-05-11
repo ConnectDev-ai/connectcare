@@ -1149,15 +1149,32 @@ function renderLayers() {
 }
 
 function flyToData(data) {
-    const lats = data.talleres.map(t => t.lat);
-    const lons = data.talleres.map(t => t.lon);
-    if (!lats.length) return;
-    const cLat = lats.reduce((a, b) => a + b) / lats.length;
-    const cLon = lons.reduce((a, b) => a + b) / lons.length;
-    defaultCenter = { lat: cLat, lon: cLon, zoom: 4.7 };
+    // Calcular bounding box sobre todas las unidades + talleres
+    const allLats = [
+        ...data.talleres.map(t => t.lat),
+        ...(data.units || []).map(u => u.lat).filter(v => v != null),
+    ];
+    const allLons = [
+        ...data.talleres.map(t => t.lon),
+        ...(data.units || []).map(u => u.lon).filter(v => v != null),
+    ];
+    if (!allLats.length) return;
+
+    const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+    const minLon = Math.min(...allLons), maxLon = Math.max(...allLons);
+    const cLat = (minLat + maxLat) / 2;
+    const cLon = (minLon + maxLon) / 2;
+
+    // Estimar zoom para que quepan todos los puntos
+    const latSpan = maxLat - minLat || 10;
+    const lonSpan = maxLon - minLon || 10;
+    const span    = Math.max(latSpan, lonSpan);
+    const zoom    = Math.min(4.7, Math.max(2, Math.log2(360 / span) - 0.5));
+
+    defaultCenter = { lat: cLat, lon: cLon, zoom };
     deckgl.setProps({
         initialViewState: {
-            longitude: cLon, latitude: cLat, zoom: 4.7, pitch: 45, bearing: 0,
+            longitude: cLon, latitude: cLat, zoom, pitch: 45, bearing: 0,
             transitionDuration: 1800,
             transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
         },
