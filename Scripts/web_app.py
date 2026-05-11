@@ -281,13 +281,16 @@ def api_data():
         """), conn, params={"run_id": run_id})
 
         df_cov = pd.read_sql(text("""
-            SELECT sto.taller_id, sto.taller_nombre,
+            SELECT dt.taller_id, dt.taller_nombre,
                    dt.lat, dt.lon,
-                   sto.unidades_100km, sto.unidades_total_snapshot, sto.radius_km
-            FROM snapshot_taller_overlap sto
-            JOIN dim_taller dt ON dt.taller_id = sto.taller_id
-            WHERE sto.run_id = :run_id
-        """), conn, params={"run_id": run_id})
+                   COALESCE(sto.unidades_100km, 0)              AS unidades_100km,
+                   COALESCE(sto.unidades_total_snapshot, 0)     AS unidades_total_snapshot,
+                   COALESCE(sto.radius_km, :radius_km)          AS radius_km
+            FROM dim_taller dt
+            LEFT JOIN snapshot_taller_overlap sto
+                   ON sto.taller_id = dt.taller_id AND sto.run_id = :run_id
+            WHERE dt.activo = TRUE
+        """), conn, params={"run_id": run_id, "radius_km": float(os.getenv("RADIUS_KM", 100))})
 
     df_u   = _clean_units(df_u)
     df_cov = _clean_talleres(df_cov)
@@ -791,12 +794,15 @@ def api_export(tipo: str):
             """), conn, params={"run_id": run_id})
         else:
             df = pd.read_sql(text("""
-                SELECT sto.taller_id, sto.taller_nombre,
+                SELECT dt.taller_id, dt.taller_nombre,
                        dt.lat, dt.lon,
-                       sto.unidades_100km, sto.unidades_total_snapshot, sto.radius_km
-                FROM snapshot_taller_overlap sto
-                JOIN dim_taller dt ON dt.taller_id = sto.taller_id
-                WHERE sto.run_id = :run_id
+                       COALESCE(sto.unidades_100km, 0)          AS unidades_100km,
+                       COALESCE(sto.unidades_total_snapshot, 0) AS unidades_total_snapshot,
+                       COALESCE(sto.radius_km, 100)             AS radius_km
+                FROM dim_taller dt
+                LEFT JOIN snapshot_taller_overlap sto
+                       ON sto.taller_id = dt.taller_id AND sto.run_id = :run_id
+                WHERE dt.activo = TRUE
             """), conn, params={"run_id": run_id})
 
     csv_str = df.to_csv(index=False, encoding="utf-8-sig")
