@@ -77,6 +77,14 @@ COPILOTO_EMAIL       = os.getenv("COPILOTO_EMAIL",    "").strip()
 COPILOTO_PASSWORD    = os.getenv("COPILOTO_PASSWORD", "").strip()
 
 # =========================
+# Geotab
+# =========================
+GEOTAB_SERVER   = os.getenv("GEOTAB_SERVER",   "my.geotab.com").strip()
+GEOTAB_DATABASE = os.getenv("GEOTAB_DATABASE", "").strip()
+GEOTAB_USERNAME = os.getenv("GEOTAB_USERNAME", "").strip()
+GEOTAB_PASSWORD = os.getenv("GEOTAB_PASSWORD", "").strip()
+
+# =========================
 # PostgreSQL
 # =========================
 PGHOST     = os.getenv("PGHOST",     "localhost").strip()
@@ -610,6 +618,107 @@ def insert_snapshot_taller_exclusive(engine, run_id, snap_ts, df_cov):
 
 
 # =========================
+# Geotab
+# =========================
+def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
+    """Fetches DeviceStatusInfo + Device from Geotab API and returns a normalized DataFrame."""
+    if not all([GEOTAB_DATABASE, GEOTAB_USERNAME, GEOTAB_PASSWORD]):
+        log.info("Geotab: credenciales no configuradas — omitiendo fuente.")
+        return pd.DataFrame()
+
+    url = f"https://{GEOTAB_SERVER}/apiv1"
+
+    # 1. Autenticar para obtener sessionId fresco
+    r = session.post(url, json={
+        "method": "Authenticate",
+        "params": {"database": GEOTAB_DATABASE, "userName": GEOTAB_USERNAME, "password": GEOTAB_PASSWORD},
+    }, timeout=30)
+    r.raise_for_status()
+    auth_result = r.json().get("result", {})
+    creds = auth_result.get("credentials", {})
+    # La API puede redirigir a un servidor distinto
+    server_path = auth_result.get("path", "")
+    if server_path and server_path != "ThisServer":
+        url = f"https://{server_path}/apiv1"
+    log.info("Geotab: autenticado en %s como %s", url, GEOTAB_USERNAME)
+
+    # 2. DeviceStatusInfo — posición actual de cada dispositivo
+    r = session.post(url, json={
+        "method": "Get",
+        "params": {
+            "typeName": "DeviceStatusInfo",
+            "propertySelector": {"fields": ["device", "latitude", "longitude", "speed", "dateTime"]},
+            "credentials": creds,
+        },
+    }, timeout=120)
+    r.raise_for_status()
+    status_list = r.json().get("result", [])
+    log.info("Geotab: %s registros DeviceStatusInfo recibidos.", len(status_list))
+
+    # 3. Device — VIN, patente, nombre, serial
+    r = session.post(url, json={
+        "method": "Get",
+        "params": {
+            "typeName": "Device",
+            "propertySelector": {"fields": ["id", "name", "vehicleIdentificationNumber", "licensePlate", "serialNumber"]},
+            "credentials": creds,
+        },
+    }, timeout=120)
+    r.raise_for_status()
+    device_map = {}
+    for d in r.json().get("result", []):
+        device_map[d.get("id", "")] = {
+            "vin":          (d.get("vehicleIdentificationNumber") or "").strip() or None,
+            "patente":      (d.get("licensePlate")               or "").strip() or None,
+            "vehicle_name": (d.get("name")                       or "").strip() or None,
+            "imei":         (d.get("serialNumber")               or "").strip() or None,
+        }
+
+    # 4. Construir DataFrame normalizado
+    snap_dt = pd.to_datetime(snap_ts, utc=True)
+    rows = []
+    for s in status_list:
+        lat = s.get("latitude")
+        lon = s.get("longitude")
+        dt_str = s.get("dateTime") or s.get("DateTime") or ""
+        dev_id = (s.get("device") or {}).get("id", "")
+        if lat is None or lon is None or not dt_str:
+            continue
+        try:
+            gps_dt = pd.to_datetime(dt_str, utc=True)
+        except Exception:
+            continue
+        age_days = (snap_dt - gps_dt).total_seconds() / 86400.0
+        if age_days < 0 or age_days > MAX_GPS_AGE_DAYS:
+            continue
+        dev = device_map.get(dev_id, {})
+        vin = dev.get("vin")
+        unit_id = vin if (PREFER_VIN and vin) else (dev.get("imei") or dev_id)
+        rows.append({
+            "unit_id":      unit_id,
+            "lat":          float(lat),
+            "lon":          float(lon),
+            "vin":          vin,
+            "imei":         dev.get("imei"),
+            "patente":      dev.get("patente"),
+            "vehicle_name": dev.get("vehicle_name"),
+            "empresa":      None,
+        })
+
+    if not rows:
+        log.info("Geotab: sin unidades dentro del rango de edad GPS.")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
+    df = df[~((df["lat"].abs() < 1e-6) & (df["lon"].abs() < 1e-6))]
+    df["unit_id"] = df["unit_id"].astype(str).str.strip()
+    df = df[df["unit_id"] != ""].drop_duplicates("unit_id", keep="first").reset_index(drop=True)
+    log.info("Geotab: %s unidades válidas.", len(df))
+    return df
+
+
+# =========================
 # Main
 # =========================
 def main():
@@ -638,15 +747,29 @@ def main():
             auth_headers = {"Authorization": f"Bearer {token}"}
         df_raw = fetch_vehicle_records_df(session, auth_headers, snap_tag)
 
+        # Geotab (opcional — solo si están configuradas las credenciales)
+        df_geotab = fetch_geotab_units(session, snap_ts)
+
     df_units = units_from_vehicle_records(df_raw, snap_ts)
-    log.info("Unidades únicas: %s", df_units["unit_id"].nunique())
+    log.info("Unidades Copiloto: %s", df_units["unit_id"].nunique())
+
+    # Merge Geotab: agregar unidades nuevas (sin duplicar por unit_id)
+    if not df_geotab.empty:
+        existing_ids = set(df_units["unit_id"].dropna())
+        df_geotab_new = df_geotab[~df_geotab["unit_id"].isin(existing_ids)].copy()
+        for col in df_units.columns:
+            if col not in df_geotab_new.columns:
+                df_geotab_new[col] = None
+        df_geotab_new = df_geotab_new[[c for c in df_units.columns if c in df_geotab_new.columns]]
+        df_units = pd.concat([df_units, df_geotab_new], ignore_index=True)
+        log.info("Unidades totales (Copiloto + Geotab): %s", df_units["unit_id"].nunique())
 
     if df_units.empty:
         raise RuntimeError("Snapshot vacío.")
 
     df_units = assign_nearest_taller_to_units(df_units, df_talleres, RADIUS_KM)
 
-    # ── NUEVO: enriquecer con empresa del master ──
+    # Enriquecer con empresa del master
     df_units = enrich_units_with_master(df_units, df_master)
 
     # CSV snapshot units (ahora incluye Empresa, Marca, Modelo, Patente)

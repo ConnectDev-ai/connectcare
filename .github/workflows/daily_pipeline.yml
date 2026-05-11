@@ -41,6 +41,10 @@ jobs:
           PGDATABASE: "neondb"
           PGUSER:     "neondb_owner"
 
+          GEOTAB_DATABASE: ${{ secrets.GEOTAB_DATABASE }}
+          GEOTAB_USERNAME: ${{ secrets.GEOTAB_USERNAME }}
+          GEOTAB_PASSWORD: ${{ secrets.GEOTAB_PASSWORD }}
+
           TALLERES_XLSX:     Data/talleres.xlsx
           MASTER_FLOTA_XLSX: Data/master_Flota.xlsx
           RADIUS_KM:        "100"
