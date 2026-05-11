@@ -1115,15 +1115,15 @@ function buildLayers(data) {
         colorRange: HEX_COLORS,
     }));
 
-    // Capa de puntos dorado brillante para unidades fuera de Chile
+    // Capa de puntos para unidades fuera de Chile (Perú, Colombia, etc.)
     if (unitsOutlier.length > 0) {
         layers.push(new deck.ScatterplotLayer({
             id: 'outlier-units', data: unitsOutlier,
             getPosition: d => [d.lon, d.lat],
-            getRadius: 6000,
-            getFillColor: [255, 220, 50, 230],
+            getRadius: 5000,
+            getFillColor: [242, 190, 140, 220],
             getLineColor: [255, 255, 255, 180],
-            lineWidthMinPixels: 1, radiusMinPixels: 4, radiusMaxPixels: 12,
+            lineWidthMinPixels: 1.5, radiusMinPixels: 4, radiusMaxPixels: 10,
             stroked: true, filled: true, pickable: false,
         }));
     }
