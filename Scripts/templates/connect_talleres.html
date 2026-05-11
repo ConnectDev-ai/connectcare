@@ -1096,6 +1096,7 @@ function loadMapData() {
             if (data.error) throw new Error(data.error);
             appData = data;
             updateMapKPIs(data);
+            updateKPIsForFilter(countryFilter);
             renderLayers();
             flyToData(data);
             document.getElementById('fl-loading').style.display = 'none';
@@ -1126,6 +1127,53 @@ function updateMapKPIs(data) {
     document.getElementById('sb-top-n').textContent     = fmt(k.top_taller_n);
     document.getElementById('sb-top-name').textContent  = k.top_taller || '—';
     document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
+}
+
+function unitsByCountry(filter) {
+    const all = appData.units || [];
+    if (filter === 'chile')    return all.filter(u => u.lat <= -17);
+    if (filter === 'colombia') return all.filter(u => u.lat >   0);
+    if (filter === 'peru')     return all.filter(u => u.lat > -17 && u.lat <= 0);
+    return all;
+}
+
+function talleresByCountry(filter) {
+    const all = appData.talleres || [];
+    if (filter === 'chile')    return all.filter(t => t.lat <= -17);
+    if (filter === 'colombia') return all.filter(t => t.lat >   0);
+    if (filter === 'peru')     return all.filter(t => t.lat > -17 && t.lat <= 0);
+    return all;
+}
+
+function updateKPIsForFilter(filter) {
+    if (!appData) return;
+    const units    = unitsByCountry(filter);
+    const talleres = talleresByCountry(filter);
+    const total    = units.length;
+    const dentro   = units.filter(u => u.dentro_radio_taller).length;
+    const pctVal   = total > 0 ? Math.round(dentro / total * 100) : 0;
+
+    // Taller con más unidades asignadas dentro del filtro (por coordenadas)
+    const tallerUnits = {};
+    talleres.forEach(t => { tallerUnits[t.taller_nombre] = t.asignadas || 0; });
+    let topNombre = '—', topN = 0;
+    Object.entries(tallerUnits).forEach(([n, v]) => { if (v > topN) { topN = v; topNombre = n; } });
+
+    // KPI strip
+    document.getElementById('kpi-units').textContent    = fmt(total);
+    document.getElementById('kpi-hexbin').textContent   = fmt(total);
+    document.getElementById('kpi-pct').textContent      = `${pctVal}%`;
+    document.getElementById('kpi-talleres').textContent = fmt(talleres.length);
+    // Floating panel
+    document.getElementById('fl-units').textContent     = fmt(total);
+    document.getElementById('fl-talleres').textContent  = fmt(talleres.length);
+    document.getElementById('fl-pct').textContent       = `${pctVal}%`;
+    document.getElementById('fl-top-n').textContent     = fmt(topN);
+    // Sidebar
+    document.getElementById('sb-talleres').textContent  = fmt(talleres.length);
+    document.getElementById('sb-pct').textContent       = `${pctVal}%`;
+    document.getElementById('sb-top-n').textContent     = fmt(topN);
+    document.getElementById('sb-top-name').textContent  = topNombre;
 }
 
 function buildLayers(data) {
@@ -1229,6 +1277,7 @@ function setCountryFilter(country) {
     });
 
     renderLayers();
+    updateKPIsForFilter(country);
 
     // Fly a la vista del país
     const v = COUNTRY_VIEWS[country];

@@ -315,7 +315,10 @@ def api_data():
         cnt = df_u.groupby("taller_cercano_nombre")["unit_id"].count()
         if len(cnt): top_t, top_n = str(cnt.idxmax()), int(cnt.max())
 
-    df_hex = df_u[["lat","lon"]]
+    cols_hex = ["lat", "lon"]
+    if "dentro_radio_taller" in df_u.columns:
+        cols_hex.append("dentro_radio_taller")
+    df_hex = df_u[cols_hex]
     if len(df_hex) > MAX_HEX:
         df_hex = df_hex.sample(MAX_HEX, random_state=7)
 
