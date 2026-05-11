@@ -1103,13 +1103,29 @@ function buildLayers(data) {
     const totalUnits = data.kpis.total_units || 1;
     const layers = [];
 
+    // Unidades Chile — colorDomain automático según densidad local
+    const unitsChile   = (data.units || []).filter(u => u.lat <= -17);
+    const unitsOutlier = (data.units || []).filter(u => u.lat >  -17);
+
     layers.push(new deck.HexagonLayer({
-        id: 'hex-density', data: data.units || [],
+        id: 'hex-density', data: unitsChile,
         getPosition: d => [d.lon, d.lat],
         radius: hexRadius, elevationScale: 25, elevationRange: [0, 2500],
         extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
         colorRange: HEX_COLORS,
     }));
+
+    // Unidades fuera de Chile — colorDomain fijo [0,3] para que 1 unidad/hex
+    // aparezca en el tono claro-sabbia, igual que zonas dispersas de Chile
+    if (unitsOutlier.length > 0) {
+        layers.push(new deck.HexagonLayer({
+            id: 'hex-density-outlier', data: unitsOutlier,
+            getPosition: d => [d.lon, d.lat],
+            radius: hexRadius, elevationScale: 25, elevationRange: [0, 2500],
+            extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
+            colorRange: HEX_COLORS, colorDomain: [0, 3],
+        }));
+    }
 
     if (layerState.coverage) {
         layers.push(new deck.ScatterplotLayer({
