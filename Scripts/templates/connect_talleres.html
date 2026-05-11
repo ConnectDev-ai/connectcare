@@ -439,6 +439,34 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                 <!-- deck.gl canvas -->
                 <div id="deck-container"></div>
 
+                <!-- Country filter pill -->
+                <div class="absolute top-3 right-3 md:top-5 md:right-5 z-30 flex gap-1.5" id="country-filter-bar">
+                    <button id="cf-all" onclick="setCountryFilter('all')"
+                            class="cf-btn active flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#f2be8c]/15 border-[#f2be8c]/40 text-[#f2be8c]">
+                        <span style="font-size:14px">🌎</span> Todos
+                    </button>
+                    <button id="cf-chile" onclick="setCountryFilter('chile')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇨🇱</span> Chile
+                    </button>
+                    <button id="cf-colombia" onclick="setCountryFilter('colombia')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇨🇴</span> Colombia
+                    </button>
+                    <button id="cf-peru" onclick="setCountryFilter('peru')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇵🇪</span> Perú
+                    </button>
+                </div>
+
                 <!-- Custom tooltip -->
                 <div id="deck-tooltip">
                     <div class="glass bg-[#131313]/80 border border-white/[0.08] rounded-xl p-4 shadow-2xl"
@@ -1033,6 +1061,7 @@ let appData       = null;
 let hexRadius     = 5000;
 let pitch3d       = true;
 let layerState    = { coverage: true, labels: false };
+let countryFilter = 'all'; // 'all' | 'chile' | 'colombia' | 'peru'
 let defaultCenter = { lat: -33.45, lon: -70.65, zoom: 4.7 };
 let viewState     = { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
                       zoom: defaultCenter.zoom, pitch: 45, bearing: 0 };
@@ -1103,9 +1132,22 @@ function buildLayers(data) {
     const totalUnits = data.kpis.total_units || 1;
     const layers = [];
 
-    // Unidades Chile — colorDomain automático según densidad local
-    const unitsChile   = (data.units || []).filter(u => u.lat <= -17);
-    const unitsOutlier = (data.units || []).filter(u => u.lat >  -17);
+    // Clasificar unidades por país según latitud
+    const all       = data.units || [];
+    const byCountry = {
+        chile:    all.filter(u => u.lat <= -17),
+        colombia: all.filter(u => u.lat >   0),
+        peru:     all.filter(u => u.lat >  -17 && u.lat <= 0),
+    };
+
+    const showChile    = countryFilter === 'all' || countryFilter === 'chile';
+    const showColombia = countryFilter === 'all' || countryFilter === 'colombia';
+    const showPeru     = countryFilter === 'all' || countryFilter === 'peru';
+
+    const unitsChile   = showChile    ? byCountry.chile    : [];
+    const unitsColombia= showColombia ? byCountry.colombia : [];
+    const unitsPeru    = showPeru     ? byCountry.peru     : [];
+    const unitsOutlier = [...unitsColombia, ...unitsPeru];
 
     layers.push(new deck.HexagonLayer({
         id: 'hex-density', data: unitsChile,
@@ -1115,8 +1157,6 @@ function buildLayers(data) {
         colorRange: HEX_COLORS,
     }));
 
-    // Unidades fuera de Chile — colorDomain fijo [0,3] para que 1 unidad/hex
-    // aparezca en el tono claro-sabbia, igual que zonas dispersas de Chile
     if (unitsOutlier.length > 0) {
         layers.push(new deck.HexagonLayer({
             id: 'hex-density-outlier', data: unitsOutlier,
@@ -1162,6 +1202,42 @@ function buildLayers(data) {
 function renderLayers() {
     if (!deckgl || !appData) return;
     deckgl.setProps({ layers: buildLayers(appData) });
+}
+
+const COUNTRY_VIEWS = {
+    all:      { lat: -20,    lon: -72,    zoom: 3.2 },
+    chile:    { lat: -33.45, lon: -70.65, zoom: 4.7 },
+    colombia: { lat:   4.7,  lon: -74.1,  zoom: 5.5 },
+    peru:     { lat:  -9.5,  lon: -76.5,  zoom: 5.0 },
+};
+
+function setCountryFilter(country) {
+    countryFilter = country;
+
+    // Actualizar estilo de botones
+    document.querySelectorAll('.cf-btn').forEach(btn => {
+        const isActive = btn.id === `cf-${country}`;
+        btn.className = btn.className
+            .replace(/bg-\[#f2be8c\]\/15|bg-\[#1c1b1b\]\/80/g, '')
+            .replace(/border-\[#f2be8c\]\/40|border-\[#353534\]\/60/g, '')
+            .replace(/text-\[#f2be8c\]|text-\[#e5e2e1\]\/50/g, '');
+        if (isActive) {
+            btn.className += ' bg-[#f2be8c]/15 border-[#f2be8c]/40 text-[#f2be8c]';
+        } else {
+            btn.className += ' bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50';
+        }
+    });
+
+    renderLayers();
+
+    // Fly a la vista del país
+    const v = COUNTRY_VIEWS[country];
+    if (v && deckgl) {
+        deckgl.setProps({ initialViewState: {
+            longitude: v.lon, latitude: v.lat, zoom: v.zoom,
+            pitch: 45, bearing: 0, transitionDuration: 800,
+        }});
+    }
 }
 
 function flyToData(data) {
