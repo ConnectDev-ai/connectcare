@@ -1123,7 +1123,7 @@ function buildLayers(data) {
             getPosition: d => [d.lon, d.lat],
             radius: hexRadius, elevationScale: 25, elevationRange: [0, 2500],
             extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
-            colorRange: HEX_COLORS, colorDomain: [0, 3],
+            colorRange: HEX_COLORS, colorDomain: [0, 3], elevationDomain: [0, 3],
         }));
     }
 
