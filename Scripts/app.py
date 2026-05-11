@@ -677,19 +677,23 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
     # 4. Construir DataFrame normalizado
     snap_dt = pd.to_datetime(snap_ts, utc=True)
     rows = []
+    skip_no_coords = skip_no_dt = skip_age = 0
     for s in status_list:
         lat = s.get("latitude")
         lon = s.get("longitude")
         dt_str = s.get("dateTime") or s.get("DateTime") or ""
         dev_id = (s.get("device") or {}).get("id", "")
         if lat is None or lon is None or not dt_str:
+            skip_no_coords += 1
             continue
         try:
             gps_dt = pd.to_datetime(dt_str, utc=True)
         except Exception:
+            skip_no_dt += 1
             continue
         age_days = (snap_dt - gps_dt).total_seconds() / 86400.0
         if age_days < 0 or age_days > MAX_GPS_AGE_DAYS:
+            skip_age += 1
             continue
         dev = device_map.get(dev_id, {})
         vin = dev.get("vin")
@@ -704,6 +708,8 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
             "vehicle_name": dev.get("vehicle_name"),
             "empresa":      None,
         })
+    log.info("Geotab filtros: sin_coords=%s  sin_fecha=%s  gps_antiguo(>%sd)=%s",
+             skip_no_coords, skip_no_dt, MAX_GPS_AGE_DAYS, skip_age)
 
     if not rows:
         log.info("Geotab: sin unidades dentro del rango de edad GPS.")
