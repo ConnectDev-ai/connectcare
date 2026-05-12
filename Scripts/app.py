@@ -14,6 +14,7 @@ Requisitos:
 from __future__ import annotations
 
 import io
+import json
 import os
 import sys
 import logging
@@ -87,6 +88,103 @@ GEOTAB_PASSWORD = os.getenv("GEOTAB_PASSWORD", "").strip()
 _raw_dbs = os.getenv("GEOTAB_DATABASES", "") or os.getenv("GEOTAB_DATABASE", "")
 GEOTAB_DATABASES: list[str] = [d.strip() for d in _raw_dbs.split(",") if d.strip()]
 _GEOTAB_BATCH_SIZE = 50  # devices per ExecuteMultiCall (2 calls each → 100 total)
+
+# ── VIN decoder: WMI table + NHTSA fallback ──────────────────────────────────
+# WMI (first 3 chars of VIN) → brand name
+_WMI_BRANDS: dict[str, str] = {
+    # North America — NHTSA covers these, table is fallback only
+    "1FU": "FREIGHTLINER", "3AK": "FREIGHTLINER",
+    "3HS": "INTERNATIONAL",
+    "1XK": "KENWORTH",    "2NP": "KENWORTH",
+    "1XP": "PETERBILT",
+    "1M1": "MACK",
+    "4V1": "VOLVO",       "4V2": "VOLVO",
+    # Germany
+    "WDB": "MERCEDES-BENZ", "W1F": "MERCEDES-BENZ", "W1N": "MERCEDES-BENZ",
+    "WMA": "MAN",
+    # Sweden
+    "YS2": "SCANIA",      "YV2": "VOLVO",
+    # Brazil (frequent in South America fleets)
+    "9BM": "MERCEDES-BENZ",   # Mercedes-Benz do Brasil (buses & camiones)
+    "9BF": "FORD",
+    "9BW": "VOLKSWAGEN",
+    "953": "AGRALE",
+    # Others seen in fleet data
+    "9GC": "CHEVROLET",
+    "LSF": "LAND ROVER",
+}
+
+# Cache keyed by first 8 chars of VIN (WMI + model descriptor).
+# Vehicles of the same model series share the same 8-char prefix, so one
+# NHTSA call covers hundreds of VINs → pipeline stays fast.
+_VIN_MODEL_CACHE: dict[str, dict] = {}
+_VIN_CACHE_FILE  = Path(__file__).parent.parent / "Data" / "vin_cache.json"
+
+
+def _load_vin_cache() -> None:
+    global _VIN_MODEL_CACHE
+    try:
+        if _VIN_CACHE_FILE.exists():
+            _VIN_MODEL_CACHE = json.loads(_VIN_CACHE_FILE.read_text(encoding="utf-8"))
+            log.info("VIN cache cargado: %s entradas", len(_VIN_MODEL_CACHE))
+    except Exception as exc:
+        log.warning("vin_cache.json no se pudo cargar: %s", exc)
+        _VIN_MODEL_CACHE = {}
+
+
+def _save_vin_cache() -> None:
+    try:
+        _VIN_CACHE_FILE.write_text(
+            json.dumps(_VIN_MODEL_CACHE, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        log.info("VIN cache guardado: %s entradas", len(_VIN_MODEL_CACHE))
+    except Exception as exc:
+        log.warning("vin_cache.json no se pudo guardar: %s", exc)
+
+
+def _vin_marca_modelo(vin: str, session: requests.Session) -> tuple[str, str]:
+    """Returns (make, modelo_str) for a VIN using a 3-tier strategy:
+      1. Cache hit by vin[:8] (model key) — instant, covers same-model series
+      2. NHTSA API for North American VINs (prefix 1/2/3) — make + model + year
+      3. WMI table fallback — brand only
+    """
+    if not vin or len(vin) < 3:
+        return "", ""
+    vin       = vin.strip().upper()
+    model_key = vin[:8]
+
+    if model_key in _VIN_MODEL_CACHE:
+        entry = _VIN_MODEL_CACHE[model_key]
+        return entry.get("make", ""), entry.get("model_str", "")
+
+    make = model_str = ""
+    wmi  = vin[:3]
+
+    # NHTSA — only for North American VINs
+    if vin[0] in ("1", "2", "3"):
+        try:
+            r = session.get(
+                f"https://vpic.nhtsa.dot.gov/api/vehicles/decodevinvalues/{vin}?format=json",
+                timeout=10,
+            )
+            res         = r.json()["Results"][0]
+            nhtsa_make  = res.get("Make",      "").strip().upper()
+            nhtsa_model = res.get("Model",     "").strip()
+            nhtsa_year  = res.get("ModelYear", "").strip()
+            if nhtsa_make and nhtsa_model:
+                make      = nhtsa_make
+                model_str = f"{nhtsa_make} {nhtsa_model} {nhtsa_year}".strip()
+        except Exception as exc:
+            log.debug("NHTSA error VIN %s: %s", vin, exc)
+
+    # WMI table fallback (brand only — vehicle_name fills model via SQL COALESCE)
+    if not make:
+        wmi_brand = _WMI_BRANDS.get(wmi, "")
+        if wmi_brand:
+            make = model_str = wmi_brand
+
+    _VIN_MODEL_CACHE[model_key] = {"make": make, "model_str": model_str}
+    return make, model_str
 
 # =========================
 # PostgreSQL
@@ -738,7 +836,19 @@ def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: st
             "engine_h":     None,
         }
 
-    # 4. Odómetro y horómetro vía ExecuteMultiCall
+    # 4. Decodificar VIN → marca/modelo (WMI table + NHTSA, cacheado por model key)
+    vin_decoded = 0
+    for dev in device_map.values():
+        vin = dev.get("vin") or ""
+        make, modelo_str = _vin_marca_modelo(vin, session)
+        dev["decoded_make"]   = make
+        dev["decoded_modelo"] = modelo_str
+        if make:
+            vin_decoded += 1
+    log.info("Geotab [%s]: marca/modelo decodificados para %s/%s dispositivos.",
+             database, vin_decoded, len(device_map))
+
+    # 6. Odómetro y horómetro vía ExecuteMultiCall
     dev_ids = [did for did in device_map if did]
     if dev_ids:
         try:
@@ -756,7 +866,7 @@ def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: st
         except Exception as exc:
             log.warning("Geotab [%s]: no se pudo obtener odómetro/horómetro — %s", database, exc)
 
-    # 5. Construir DataFrame normalizado
+    # 7. Construir DataFrame normalizado
     snap_dt = pd.to_datetime(snap_ts, utc=True)
     rows = []
     skip_no_coords = skip_no_dt = skip_age = 0
@@ -788,8 +898,9 @@ def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: st
             "imei":         dev.get("imei"),
             "patente":      dev.get("patente"),
             "vehicle_name": dev.get("vehicle_name"),
-            "empresa":      None,
-            "can_odometer": dev.get("odo_km"),
+            "empresa":       None,
+            "modelo":        dev.get("decoded_modelo") or None,
+            "can_odometer":  dev.get("odo_km"),
             "can_horometer": dev.get("engine_h"),
         })
     log.info("Geotab [%s] filtros: sin_coords=%s  sin_fecha=%s  gps_antiguo(>%sd)=%s",
@@ -814,6 +925,8 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
         log.info("Geotab: credenciales o bases de datos no configuradas — omitiendo fuente.")
         return pd.DataFrame()
 
+    _load_vin_cache()
+
     frames: list[pd.DataFrame] = []
     for db in GEOTAB_DATABASES:
         try:
@@ -822,6 +935,8 @@ def fetch_geotab_units(session: requests.Session, snap_ts: str) -> pd.DataFrame:
                 frames.append(df_db)
         except Exception as exc:
             log.warning("Geotab [%s]: error al obtener unidades — %s", db, exc)
+
+    _save_vin_cache()
 
     if not frames:
         return pd.DataFrame()

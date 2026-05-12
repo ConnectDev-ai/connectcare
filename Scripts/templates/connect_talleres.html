@@ -2265,6 +2265,14 @@ const EF_ESTADO_CFG = {
     SIN_DATOS: { label: 'Sin datos', cls: 'text-[#e5e2e1]/30', badge: 'bg-[#353534]/40 text-[#e5e2e1]/30 border border-[#353534]/40' },
 };
 
+function updateEfKPIs(rows) {
+    document.getElementById('ef-con-can').textContent    = fmt(rows.filter(r => r.estado !== 'SIN_DATOS').length);
+    document.getElementById('ef-sin-can').textContent    = fmt(rows.filter(r => r.estado === 'SIN_DATOS').length);
+    document.getElementById('ef-criticos').textContent   = fmt(rows.filter(r => r.estado === 'CRITICO').length);
+    document.getElementById('ef-atencion').textContent   = fmt(rows.filter(r => r.estado === 'ATENCION').length);
+    document.getElementById('ef-con-fallas').textContent = fmt(rows.filter(r => r.fallas_count > 0).length);
+}
+
 function loadEstadoFlota() {
     document.getElementById('ef-loading').style.display = 'flex';
     document.getElementById('ef-table').style.display   = 'none';
@@ -2276,14 +2284,8 @@ function loadEstadoFlota() {
             if (data.error) throw new Error(data.error);
             _efData = data;
 
-            // KPI cards
-            const k = data.kpis;
-            document.getElementById('ef-con-can').textContent    = fmt(k.con_can);
-            document.getElementById('ef-sin-can').textContent    = fmt(k.sin_can);
-            document.getElementById('ef-criticos').textContent   = fmt(k.criticos);
-            document.getElementById('ef-atencion').textContent   = fmt(k.atencion);
-            document.getElementById('ef-con-fallas').textContent = fmt(k.con_fallas);
-            document.getElementById('ef-kpis').style.cssText     = 'display:grid!important';
+            updateEfKPIs(data.rows);
+            document.getElementById('ef-kpis').style.cssText = 'display:grid!important';
 
             // Empresa select
             const empSel = document.getElementById('ef-empresa');
@@ -2316,6 +2318,7 @@ function renderEstadoFlotaTable(rows) {
             <th>Fallas DTC</th>
             <th>País</th>
             <th>Patente</th>
+            <th>VIN</th>
             <th>Empresa</th>
             <th>Modelo</th>
             <th>Taller más cercano</th>
@@ -2354,6 +2357,7 @@ function renderEstadoFlotaTable(rows) {
                 <td>${fallaCell}</td>
                 <td class="text-[12px]">${paisCell}</td>
                 <td class="font-mono">${escHtml(r.patente || '—')}</td>
+                <td class="font-mono text-[11px] text-[#e5e2e1]/60">${escHtml(r.vin || '—')}</td>
                 <td>${escHtml(r.empresa || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
@@ -2414,6 +2418,7 @@ function applyEstadoFlotaFilter() {
         (r.empresa  || '').toUpperCase().includes(q) ||
         (r.modelo   || '').toUpperCase().includes(q)
     );
+    updateEfKPIs(rows);
     renderEstadoFlotaTable(rows);
 }
 
@@ -2424,7 +2429,7 @@ function applyEstadoFlotaFilterDebounced() {
 
 function downloadEstadoFlotaCSV() {
     if (!_efData) return;
-    const cols = ['pais','patente','empresa','modelo','taller','can_odometer','can_horometer',
+    const cols = ['pais','patente','vin','empresa','modelo','taller','can_odometer','can_horometer',
                   'marca_detectada','umbral_km','proximo_servicio_km','km_restantes','estado'];
     const header = cols.join(',');
     const body = _efData.rows.map(r =>

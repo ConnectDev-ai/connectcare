@@ -740,6 +740,7 @@ def api_estado_flota():
 
         rows.append({
             "unit_id":             _safe_str(r["unit_id"]),
+            "vin":                 _safe_str(r["vin"]),
             "patente":             _safe_str(r["patente"]),
             "empresa":             _safe_str(r["empresa"]),
             "modelo":              _safe_str(r["modelo"]),
