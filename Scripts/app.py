@@ -86,6 +86,7 @@ GEOTAB_PASSWORD = os.getenv("GEOTAB_PASSWORD", "").strip()
 # Falls back to legacy GEOTAB_DATABASE for backward compatibility.
 _raw_dbs = os.getenv("GEOTAB_DATABASES", "") or os.getenv("GEOTAB_DATABASE", "")
 GEOTAB_DATABASES: list[str] = [d.strip() for d in _raw_dbs.split(",") if d.strip()]
+_GEOTAB_BATCH_SIZE = 50  # devices per ExecuteMultiCall (2 calls each → 100 total)
 
 # =========================
 # PostgreSQL
@@ -623,6 +624,68 @@ def insert_snapshot_taller_exclusive(engine, run_id, snap_ts, df_cov):
 # =========================
 # Geotab
 # =========================
+def _fetch_geotab_odo_hora(
+    session: requests.Session,
+    url: str,
+    creds: dict,
+    device_ids: list,
+    snap_ts: str,
+) -> dict:
+    """Fetches odometer (km) and engine hours for all device_ids via ExecuteMultiCall.
+
+    Returns {device_id: {"odo_km": float|None, "engine_h": float|None}}.
+    Geotab StatusData values: odometer in meters (÷1000→km), engine hours in seconds (÷3600→h).
+    fromDate==toDate returns the most-recent reading at or before that timestamp.
+    """
+    out: dict = {}
+    for i in range(0, len(device_ids), _GEOTAB_BATCH_SIZE):
+        batch = device_ids[i : i + _GEOTAB_BATCH_SIZE]
+        calls = []
+        for dev_id in batch:
+            calls.append({
+                "method": "Get",
+                "params": {
+                    "typeName": "StatusData",
+                    "search": {
+                        "fromDate": snap_ts,
+                        "toDate": snap_ts,
+                        "deviceSearch": {"id": dev_id},
+                        "diagnosticSearch": {"id": "DiagnosticOdometerAdjustmentId"},
+                    },
+                },
+            })
+            calls.append({
+                "method": "Get",
+                "params": {
+                    "typeName": "StatusData",
+                    "search": {
+                        "fromDate": snap_ts,
+                        "toDate": snap_ts,
+                        "deviceSearch": {"id": dev_id},
+                        "diagnosticSearch": {"id": "DiagnosticEngineHoursAdjustmentId"},
+                    },
+                },
+            })
+        r = session.post(url, json={
+            "method": "ExecuteMultiCall",
+            "params": {"calls": calls, "credentials": creds},
+        }, timeout=180)
+        r.raise_for_status()
+        responses = r.json().get("result", [])
+        for j, dev_id in enumerate(batch):
+            odo_records  = responses[j * 2]     if j * 2     < len(responses) else []
+            hora_records = responses[j * 2 + 1] if j * 2 + 1 < len(responses) else []
+            # Guard against API-level error objects instead of lists
+            if not isinstance(odo_records, list):
+                odo_records = []
+            if not isinstance(hora_records, list):
+                hora_records = []
+            odo_val  = odo_records[0]["data"]  / 1000.0 if odo_records  else None
+            hora_val = hora_records[0]["data"] / 3600.0 if hora_records else None
+            out[dev_id] = {"odo_km": odo_val, "engine_h": hora_val}
+    return out
+
+
 def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: str) -> pd.DataFrame:
     """Fetches DeviceStatusInfo + Device from a single Geotab database."""
     url = f"https://{GEOTAB_SERVER}/apiv1"
@@ -671,9 +734,29 @@ def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: st
             "patente":      (d.get("licensePlate")               or "").strip() or None,
             "vehicle_name": (d.get("name")                       or "").strip() or None,
             "imei":         (d.get("serialNumber")               or "").strip() or None,
+            "odo_km":       None,
+            "engine_h":     None,
         }
 
-    # 4. Construir DataFrame normalizado
+    # 4. Odómetro y horómetro vía ExecuteMultiCall
+    dev_ids = [did for did in device_map if did]
+    if dev_ids:
+        try:
+            odo_hora = _fetch_geotab_odo_hora(session, url, creds, dev_ids, snap_ts)
+            for did, vals in odo_hora.items():
+                if did in device_map:
+                    device_map[did]["odo_km"]   = vals["odo_km"]
+                    device_map[did]["engine_h"] = vals["engine_h"]
+            log.info(
+                "Geotab [%s]: odómetro/horómetro obtenidos para %s/%s dispositivos.",
+                database,
+                sum(1 for v in odo_hora.values() if v["odo_km"] is not None),
+                len(dev_ids),
+            )
+        except Exception as exc:
+            log.warning("Geotab [%s]: no se pudo obtener odómetro/horómetro — %s", database, exc)
+
+    # 5. Construir DataFrame normalizado
     snap_dt = pd.to_datetime(snap_ts, utc=True)
     rows = []
     skip_no_coords = skip_no_dt = skip_age = 0
@@ -706,6 +789,8 @@ def _fetch_geotab_database(session: requests.Session, database: str, snap_ts: st
             "patente":      dev.get("patente"),
             "vehicle_name": dev.get("vehicle_name"),
             "empresa":      None,
+            "can_odometer": dev.get("odo_km"),
+            "can_horometer": dev.get("engine_h"),
         })
     log.info("Geotab [%s] filtros: sin_coords=%s  sin_fecha=%s  gps_antiguo(>%sd)=%s",
              database, skip_no_coords, skip_no_dt, MAX_GPS_AGE_DAYS, skip_age)
@@ -787,10 +872,13 @@ def main():
     if not df_geotab.empty:
         existing_ids = set(df_units["unit_id"].dropna())
         df_geotab_new = df_geotab[~df_geotab["unit_id"].isin(existing_ids)].copy()
+        # Alignment bidireccional: columnas de Copiloto faltantes en Geotab y viceversa
         for col in df_units.columns:
             if col not in df_geotab_new.columns:
                 df_geotab_new[col] = None
-        df_geotab_new = df_geotab_new[[c for c in df_units.columns if c in df_geotab_new.columns]]
+        for col in df_geotab_new.columns:
+            if col not in df_units.columns:
+                df_units[col] = None
         df_units = pd.concat([df_units, df_geotab_new], ignore_index=True)
         log.info("Unidades totales (Copiloto + Geotab): %s", df_units["unit_id"].nunique())
 
