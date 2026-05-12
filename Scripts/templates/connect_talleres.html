@@ -440,7 +440,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                 <div id="deck-container"></div>
 
                 <!-- Country filter pill -->
-                <div class="absolute top-3 right-3 md:top-5 md:right-5 z-30 flex gap-1.5" id="country-filter-bar">
+                <div class="absolute top-3 right-14 md:top-5 md:right-20 z-30 flex gap-1.5" id="country-filter-bar">
                     <button id="cf-all" onclick="setCountryFilter('all')"
                             class="cf-btn active flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
                                    border transition-all duration-150 select-none
@@ -941,7 +941,16 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
 
                 <!-- Filters -->
                 <div class="section-card mb-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">País</label>
+                            <select id="ef-pais" onchange="applyEstadoFlotaFilter()">
+                                <option value="">🌎 Todos</option>
+                                <option value="Chile">🇨🇱 Chile</option>
+                                <option value="Colombia">🇨🇴 Colombia</option>
+                                <option value="Perú">🇵🇪 Perú</option>
+                            </select>
+                        </div>
                         <div>
                             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Empresa</label>
                             <select id="ef-empresa" onchange="applyEstadoFlotaFilter()">
@@ -2300,10 +2309,12 @@ function renderEstadoFlotaTable(rows) {
         return;
     }
 
+    const EF_PAIS_FLAG = { 'Chile': '🇨🇱', 'Colombia': '🇨🇴', 'Perú': '🇵🇪' };
     const html = `<table class="data-table">
         <thead><tr>
             <th>Estado</th>
             <th>Fallas DTC</th>
+            <th>País</th>
             <th>Patente</th>
             <th>Empresa</th>
             <th>Modelo</th>
@@ -2336,9 +2347,12 @@ function renderEstadoFlotaTable(rows) {
                 const desc = r.descripcion_falla ? `<div class="text-[10px] text-[#e5e2e1]/45 mt-0.5" style="white-space:normal;max-width:180px">${escHtml(r.descripcion_falla)}</div>` : '';
                 fallaCell = `<div>${prioBadge} <span class="text-[10px] text-[#e5e2e1]/50 ml-1">${r.fallas_count}</span>${desc}</div>`;
             }
+            const paisFlag = EF_PAIS_FLAG[r.pais] || '';
+            const paisCell = r.pais ? `<span class="whitespace-nowrap">${paisFlag} ${escHtml(r.pais)}</span>` : '—';
             return `<tr>
                 <td>${badge}</td>
                 <td>${fallaCell}</td>
+                <td class="text-[12px]">${paisCell}</td>
                 <td class="font-mono">${escHtml(r.patente || '—')}</td>
                 <td>${escHtml(r.empresa || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
@@ -2380,12 +2394,14 @@ function renderEfLegend(rows) {
 
 function applyEstadoFlotaFilter() {
     if (!_efData) return;
+    const pais   = document.getElementById('ef-pais').value;
     const emp    = document.getElementById('ef-empresa').value;
     const estado = document.getElementById('ef-estado').value;
     const dtc    = document.getElementById('ef-dtc').value;
     const q      = document.getElementById('ef-q').value.trim().toUpperCase();
 
     let rows = _efData.rows;
+    if (pais)   rows = rows.filter(r => r.pais === pais);
     if (emp)    rows = rows.filter(r => r.empresa === emp);
     if (estado) rows = rows.filter(r => r.estado  === estado);
     if (dtc === 'urgente')     rows = rows.filter(r => r.prioridad_falla === 'Urgente');
@@ -2408,7 +2424,7 @@ function applyEstadoFlotaFilterDebounced() {
 
 function downloadEstadoFlotaCSV() {
     if (!_efData) return;
-    const cols = ['patente','empresa','modelo','taller','can_odometer','can_horometer',
+    const cols = ['pais','patente','empresa','modelo','taller','can_odometer','can_horometer',
                   'marca_detectada','umbral_km','proximo_servicio_km','km_restantes','estado'];
     const header = cols.join(',');
     const body = _efData.rows.map(r =>

@@ -675,6 +675,17 @@ def _estado_mantenimiento(km_restantes: float | None) -> str:
         return "ATENCION"
     return "OK"
 
+def _pais_from_lat(lat) -> str:
+    try:
+        lat = float(lat)
+    except (TypeError, ValueError):
+        return "Desconocido"
+    if lat <= -17:
+        return "Chile"
+    if lat > 0:
+        return "Colombia"
+    return "Perú"
+
 # ── Route: /api/estado-flota ──────────────────────────────────────────────────
 @app.route("/api/estado-flota")
 @require_auth
@@ -689,7 +700,8 @@ def api_estado_flota():
                    COALESCE(NULLIF(su.modelo,''), su.vehicle_name) AS modelo,
                    su.taller_cercano_nombre AS taller,
                    su.distancia_taller_cercano_km,
-                   su.can_odometer, su.can_horometer, su.has_can_data
+                   su.can_odometer, su.can_horometer, su.has_can_data,
+                   su.lat
             FROM snapshot_unit su
             WHERE su.run_id = :run_id
         """), conn, params={"run_id": run_id})
@@ -732,6 +744,7 @@ def api_estado_flota():
             "empresa":             _safe_str(r["empresa"]),
             "modelo":              _safe_str(r["modelo"]),
             "taller":              _safe_str(r["taller"]),
+            "pais":                _pais_from_lat(r.get("lat")),
             "distancia_km":        None if pd.isna(r.get("distancia_taller_cercano_km")) else round(float(r["distancia_taller_cercano_km"]), 1),
             "can_odometer":        None if odo  is None else round(float(odo),  0),
             "can_horometer":       None if hora is None else round(float(hora), 1),
