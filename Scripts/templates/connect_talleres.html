@@ -465,6 +465,12 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                                    bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
                         <span style="font-size:14px">🇵🇪</span> Perú
                     </button>
+                    <button id="cf-paraguay" onclick="setCountryFilter('paraguay')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇵🇾</span> Paraguay
+                    </button>
                 </div>
 
                 <!-- Custom tooltip -->
@@ -949,6 +955,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                                 <option value="Chile">🇨🇱 Chile</option>
                                 <option value="Colombia">🇨🇴 Colombia</option>
                                 <option value="Perú">🇵🇪 Perú</option>
+                                <option value="Paraguay">🇵🇾 Paraguay</option>
                             </select>
                         </div>
                         <div>
@@ -1070,7 +1077,7 @@ let appData       = null;
 let hexRadius     = 5000;
 let pitch3d       = true;
 let layerState    = { coverage: true, labels: false };
-let countryFilter = 'all'; // 'all' | 'chile' | 'colombia' | 'peru'
+let countryFilter = 'all'; // 'all' | 'chile' | 'colombia' | 'peru' | 'paraguay'
 let defaultCenter = { lat: -33.45, lon: -70.65, zoom: 4.7 };
 let viewState     = { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
                       zoom: defaultCenter.zoom, pitch: 45, bearing: 0 };
@@ -1138,20 +1145,24 @@ function updateMapKPIs(data) {
     document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
 }
 
+// Paraguay: lon > -58 (Asunción -57.6, CDE -54.7). Chile/Peru/Col siempre < -65.
+function _countryOf(lat, lon) {
+    if (lon > -58)              return 'paraguay';
+    if (lat >   0)              return 'colombia';
+    if (lat >  -17)             return 'peru';
+    return 'chile';
+}
+
 function unitsByCountry(filter) {
     const all = appData.units || [];
-    if (filter === 'chile')    return all.filter(u => u.lat <= -17);
-    if (filter === 'colombia') return all.filter(u => u.lat >   0);
-    if (filter === 'peru')     return all.filter(u => u.lat > -17 && u.lat <= 0);
-    return all;
+    if (filter === 'all') return all;
+    return all.filter(u => _countryOf(u.lat, u.lon) === filter);
 }
 
 function talleresByCountry(filter) {
     const all = appData.talleres || [];
-    if (filter === 'chile')    return all.filter(t => t.lat <= -17);
-    if (filter === 'colombia') return all.filter(t => t.lat >   0);
-    if (filter === 'peru')     return all.filter(t => t.lat > -17 && t.lat <= 0);
-    return all;
+    if (filter === 'all') return all;
+    return all.filter(t => _countryOf(t.lat, t.lon) === filter);
 }
 
 function updateKPIsForFilter(filter) {
@@ -1189,22 +1200,25 @@ function buildLayers(data) {
     const totalUnits = data.kpis.total_units || 1;
     const layers = [];
 
-    // Clasificar unidades por país según latitud
+    // Clasificar unidades por país (lon > -58 → Paraguay)
     const all       = data.units || [];
     const byCountry = {
-        chile:    all.filter(u => u.lat <= -17),
-        colombia: all.filter(u => u.lat >   0),
-        peru:     all.filter(u => u.lat >  -17 && u.lat <= 0),
+        chile:    all.filter(u => _countryOf(u.lat, u.lon) === 'chile'),
+        colombia: all.filter(u => _countryOf(u.lat, u.lon) === 'colombia'),
+        peru:     all.filter(u => _countryOf(u.lat, u.lon) === 'peru'),
+        paraguay: all.filter(u => _countryOf(u.lat, u.lon) === 'paraguay'),
     };
 
     const showChile    = countryFilter === 'all' || countryFilter === 'chile';
     const showColombia = countryFilter === 'all' || countryFilter === 'colombia';
     const showPeru     = countryFilter === 'all' || countryFilter === 'peru';
+    const showParaguay = countryFilter === 'all' || countryFilter === 'paraguay';
 
-    const unitsChile   = showChile    ? byCountry.chile    : [];
-    const unitsColombia= showColombia ? byCountry.colombia : [];
-    const unitsPeru    = showPeru     ? byCountry.peru     : [];
-    const unitsOutlier = [...unitsColombia, ...unitsPeru];
+    const unitsChile    = showChile    ? byCountry.chile    : [];
+    const unitsColombia = showColombia ? byCountry.colombia : [];
+    const unitsPeru     = showPeru     ? byCountry.peru     : [];
+    const unitsParaguay = showParaguay ? byCountry.paraguay : [];
+    const unitsOutlier  = [...unitsColombia, ...unitsPeru, ...unitsParaguay];
 
     layers.push(new deck.HexagonLayer({
         id: 'hex-density', data: unitsChile,
@@ -1262,10 +1276,11 @@ function renderLayers() {
 }
 
 const COUNTRY_VIEWS = {
-    all:      { lat: -20,    lon: -72,    zoom: 3.2 },
+    all:      { lat: -18,    lon: -68,    zoom: 2.8 },
     chile:    { lat: -33.45, lon: -70.65, zoom: 4.7 },
     colombia: { lat:   4.7,  lon: -74.1,  zoom: 5.5 },
     peru:     { lat:  -9.5,  lon: -76.5,  zoom: 5.0 },
+    paraguay: { lat: -25.4,  lon: -57.0,  zoom: 6.5 },
 };
 
 function setCountryFilter(country) {
@@ -2325,7 +2340,7 @@ function renderEstadoFlotaTable(rows) {
         return;
     }
 
-    const EF_PAIS_FLAG = { 'Chile': '🇨🇱', 'Colombia': '🇨🇴', 'Perú': '🇵🇪' };
+    const EF_PAIS_FLAG = { 'Chile': '🇨🇱', 'Colombia': '🇨🇴', 'Perú': '🇵🇪', 'Paraguay': '🇵🇾' };
     const html = `<table class="data-table">
         <thead><tr>
             <th>Estado</th>
