@@ -697,7 +697,11 @@ def api_estado_flota():
     with engine.connect() as conn:
         df = pd.read_sql(text("""
             SELECT su.unit_id, su.vin, su.patente, su.empresa,
-                   COALESCE(NULLIF(su.modelo,''), su.vehicle_name) AS modelo,
+                   COALESCE(
+                       NULLIF(su.modelo,''),
+                       CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{17}$'
+                            THEN NULL ELSE su.vehicle_name END
+                   ) AS modelo,
                    su.taller_cercano_nombre AS taller,
                    su.distancia_taller_cercano_km,
                    su.can_odometer, su.can_horometer, su.has_can_data,

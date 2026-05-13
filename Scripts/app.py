@@ -478,7 +478,12 @@ def units_from_vehicle_records(df_raw: pd.DataFrame, snap_ts_utc: str) -> pd.Dat
     df["unit_id"] = df["unit_id"].astype(str).str.strip()
     df = df[df["unit_id"] != ""]
     df = df.sort_values(["unit_id","_gps_dt"]).drop_duplicates("unit_id", keep="last").reset_index(drop=True)
-    return df.drop(columns=["_gps_dt"], errors="ignore")
+    df = df.drop(columns=["_gps_dt"], errors="ignore")
+    # Garantizar columna vin: cuando id_col=="vin", unit_id contiene el VIN
+    # pero "vin" fue excluido de optional → repoblamos desde unit_id
+    if "vin" not in df.columns:
+        df["vin"] = df["unit_id"]
+    return df
 
 
 # =========================
