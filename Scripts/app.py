@@ -399,7 +399,13 @@ def load_talleres(xlsx_path: str) -> pd.DataFrame:
         df["zona"] = df[zona_col].astype(str).str.strip().str.upper().replace("NAN", "")
     else:
         df["zona"] = ""
-    out = df[["taller_id","taller_nombre","lat","lon","zona"]].reset_index(drop=True)
+    # pais — columna opcional
+    pais_col = next((c for c in df.columns if str(c).strip().lower() == "pais"), None)
+    if pais_col:
+        df["pais"] = df[pais_col].astype(str).str.strip().replace({"nan": "", "NAN": ""})
+    else:
+        df["pais"] = ""
+    out = df[["taller_id","taller_nombre","lat","lon","zona","pais"]].reset_index(drop=True)
     out["taller_id"]     = out["taller_id"].astype(str).str.strip()
     out["taller_nombre"] = out["taller_nombre"].astype(str).str.strip()
     return out
@@ -564,6 +570,7 @@ def run_migrations(engine):
         "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odoliter  DOUBLE PRECISION",
         "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS has_can_data  BOOLEAN",
         "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS zona          TEXT",
+        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS pais          TEXT",
     ]
     with engine.begin() as conn:
         for stmt in migrations:
@@ -578,13 +585,13 @@ def run_migrations(engine):
 # =========================
 def upsert_dim_taller(engine, df_talleres):
     sql = text("""
-        INSERT INTO dim_taller (taller_id,taller_nombre,lat,lon,geom,zona,activo,updated_at)
-        VALUES (:taller_id,:taller_nombre,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),:zona,TRUE,NOW())
+        INSERT INTO dim_taller (taller_id,taller_nombre,lat,lon,geom,zona,pais,activo,updated_at)
+        VALUES (:taller_id,:taller_nombre,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),:zona,:pais,TRUE,NOW())
         ON CONFLICT (taller_id) DO UPDATE SET
             taller_nombre=EXCLUDED.taller_nombre,lat=EXCLUDED.lat,lon=EXCLUDED.lon,
-            geom=EXCLUDED.geom,zona=EXCLUDED.zona,activo=TRUE,updated_at=NOW();
+            geom=EXCLUDED.geom,zona=EXCLUDED.zona,pais=EXCLUDED.pais,activo=TRUE,updated_at=NOW();
     """)
-    cols = ["taller_id","taller_nombre","lat","lon","zona"]
+    cols = ["taller_id","taller_nombre","lat","lon","zona","pais"]
     with engine.begin() as conn:
         conn.execute(sql, df_talleres[cols].to_dict("records"))
     log.info("dim_taller upsert OK | filas=%s", len(df_talleres))

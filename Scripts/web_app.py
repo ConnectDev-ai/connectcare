@@ -362,7 +362,7 @@ def api_ejecutivo():
         df = pd.read_sql(text("""
             SELECT su.unit_id, su.taller_cercano_nombre, su.distancia_taller_cercano_km,
                    su.dentro_radio_taller, su.empresa, su.patente,
-                   dt.zona
+                   dt.zona, COALESCE(dt.pais, '') AS pais
             FROM snapshot_unit su
             LEFT JOIN dim_taller dt ON dt.taller_id = su.taller_cercano_id
             WHERE su.run_id = :run_id
@@ -372,6 +372,7 @@ def api_ejecutivo():
         df["distancia_taller_cercano_km"], errors="coerce")
     df["zona"] = df["zona"].fillna("Sin zona").str.strip()
     df.loc[df["zona"] == "", "zona"] = "Sin zona"
+    df["pais"] = df["pais"].fillna("").str.strip()
 
     resumen = (
         df.groupby("taller_cercano_nombre")
@@ -381,6 +382,7 @@ def api_ejecutivo():
             dist_max=("distancia_taller_cercano_km", "max"),
             dist_min=("distancia_taller_cercano_km", "min"),
             zona=("zona", "first"),
+            pais=("pais", "first"),
         )
         .reset_index()
         .sort_values("unidades", ascending=False)
@@ -403,11 +405,12 @@ def api_ejecutivo():
         .sort_values("dist_prom")
     )
 
-    # Resumen por zona
-    ZONA_ORDER = ["NORTE GRANDE", "NORTE CHICO", "METROPOLITANA", "METROPOLITANA ORIENTE",
-                  "METROPOLINA ORIENTE", "CENTRO", "SUR", "EXTREMO SUR", "Sin zona"]
+    # Resumen por zona — agrupado por (pais, zona) para evitar colisiones entre países
+    PAIS_ORDER = {"Chile": 0, "Colombia": 1, "Peru": 2, "Paraguay": 3}
+    CHILE_ZONA_ORDER = ["NORTE GRANDE","NORTE CHICO","METROPOLITANA","METROPOLITANA ORIENTE",
+                        "METROPOLINA ORIENTE","CENTRO","SUR","EXTREMO SUR"]
     zona_grp = (
-        df.groupby("zona")
+        df.groupby(["pais", "zona"])
         .agg(
             unidades=("unit_id", "count"),
             talleres=("taller_cercano_nombre", "nunique"),
@@ -420,8 +423,17 @@ def api_ejecutivo():
     zona_grp["pct_cobertura"]= (zona_grp["dentro"] / zona_grp["unidades"] * 100).round(1)
     zona_grp["dist_prom"]    = zona_grp["dist_prom"].round(1)
     zona_grp["dentro"]       = zona_grp["dentro"].astype(int)
-    zona_grp["sort_key"]     = zona_grp["zona"].apply(
-        lambda z: ZONA_ORDER.index(z) if z in ZONA_ORDER else 99)
+
+    def _zona_sort(row):
+        pais_key = PAIS_ORDER.get(row["pais"], 99) * 100
+        if row["pais"] == "Chile":
+            zone_key = CHILE_ZONA_ORDER.index(row["zona"]) if row["zona"] in CHILE_ZONA_ORDER else 98
+        else:
+            zone_key = sorted(zona_grp[zona_grp["pais"] == row["pais"]]["zona"].unique()).index(row["zona"]) \
+                       if row["zona"] in zona_grp[zona_grp["pais"] == row["pais"]]["zona"].values else 98
+        return pais_key + zone_key
+
+    zona_grp["sort_key"] = zona_grp.apply(_zona_sort, axis=1)
     zona_grp = zona_grp.sort_values("sort_key").drop(columns="sort_key")
 
     return _json({
