@@ -853,13 +853,13 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                 <!-- Info bar -->
                 <div class="flex items-center justify-between mb-4">
                     <p id="det-info" class="text-xs text-[#e5e2e1]/35 font-mono">—</p>
-                    <a href="/api/export/detalle"
+                    <button onclick="authDownload('/api/export/detalle','detalle_unidades.csv')"
                        class="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase flex items-center gap-2
-                              transition-all active:scale-95"
+                              transition-all active:scale-95 hover:bg-[#f0bd8b]"
                        style="background:#f2be8c; color:#482904;">
                         <span class="icon" style="font-size:15px;">download</span>
                         Descargar CSV completo
-                    </a>
+                    </button>
                 </div>
 
                 <div id="det-loading" class="loading-state animate-pulse">Cargando datos...</div>
@@ -2227,6 +2227,27 @@ function updateTendenciaChart() {
 // ═══════════════════════════════════════════════════════
 //  REPORTES
 // ═══════════════════════════════════════════════════════
+async function authDownload(path, filename) {
+    const btn = document.querySelector(`[data-dl="${path}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Descargando…'; }
+    try {
+        const res = await authFetch(path);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } catch(e) {
+        alert(`Error al descargar: ${e.message}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="icon" style="font-size:16px;">download</span> Descargar';
+        }
+    }
+}
+
 function renderReportes() {
     const snapTs = document.getElementById('snap-ts-header').textContent;
     if (snapTs) {
@@ -2236,25 +2257,32 @@ function renderReportes() {
 
     const cards = [
         {
-            icon: 'directions_bus',
+            icon:  'directions_bus',
             title: 'Snapshot Completo de Unidades',
             desc:  'Todas las unidades GPS del último snapshot con taller más cercano, empresa y distancia.',
-            href:  '/api/export/units',
+            path:  '/api/export/units',
             file:  'snapshot_units.csv',
         },
         {
-            icon: 'build',
+            icon:  'build',
             title: 'Detalle por Taller',
             desc:  'Unidades por taller con distancias, dentro/fuera del radio y empresa.',
-            href:  '/api/export/detalle',
+            path:  '/api/export/detalle',
             file:  'detalle_unidades.csv',
         },
         {
-            icon: 'radar',
+            icon:  'radar',
             title: 'Cobertura Overlap por Taller',
             desc:  'Unidades en radio de 100 km por taller (overlap — una unidad puede aparecer en varios).',
-            href:  '/api/export/cobertura',
+            path:  '/api/export/cobertura',
             file:  'coverage_overlap.csv',
+        },
+        {
+            icon:  'map',
+            title: 'KPIs por Zona',
+            desc:  'Resumen de cobertura por zona geográfica y país: unidades, % cobertura, distancia promedio.',
+            path:  '/api/export/zonas',
+            file:  'kpis_zonas.csv',
         },
     ];
 
@@ -2268,14 +2296,14 @@ function renderReportes() {
                 <div class="font-bold text-sm text-[#e5e2e1] mb-1">${c.title}</div>
                 <div class="text-xs text-[#e5e2e1]/40 leading-relaxed">${c.desc}</div>
             </div>
-            <a href="${c.href}" download="${c.file}"
+            <button data-dl="${c.path}" onclick="authDownload('${c.path}','${c.file}')"
                class="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg
                       font-bold text-xs tracking-wide uppercase transition-all active:scale-95
-                      hover:bg-[#f0bd8b]"
+                      hover:bg-[#f0bd8b] disabled:opacity-50"
                style="background:#f2be8c; color:#482904;">
                 <span class="icon" style="font-size:16px;">download</span>
                 Descargar
-            </a>
+            </button>
         </div>
     `).join('');
 }

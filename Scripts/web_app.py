@@ -822,7 +822,7 @@ def api_export(tipo: str):
     if run_id is None:
         return _json({"error": "No data"}, 404)
 
-    ALLOWED = {"units", "detalle", "cobertura"}
+    ALLOWED = {"units", "detalle", "cobertura", "zonas"}
     if tipo not in ALLOWED:
         return _json({"error": "tipo no válido"}, 400)
 
@@ -835,7 +835,7 @@ def api_export(tipo: str):
                 FROM snapshot_unit WHERE run_id = :run_id
                 ORDER BY distancia_taller_cercano_km
             """), conn, params={"run_id": run_id})
-        else:
+        elif tipo == "cobertura":
             df = pd.read_sql(text("""
                 SELECT dt.taller_id, dt.taller_nombre,
                        dt.lat, dt.lon,
@@ -847,6 +847,39 @@ def api_export(tipo: str):
                        ON sto.taller_id = dt.taller_id AND sto.run_id = :run_id
                 WHERE dt.activo = TRUE
             """), conn, params={"run_id": run_id})
+        else:  # zonas
+            raw = pd.read_sql(text("""
+                SELECT su.unit_id, su.dentro_radio_taller,
+                       su.distancia_taller_cercano_km,
+                       dt.zona, dt.lat AS taller_lat, dt.lon AS taller_lon
+                FROM snapshot_unit su
+                LEFT JOIN dim_taller dt ON dt.taller_id = su.taller_cercano_id
+                WHERE su.run_id = :run_id
+            """), conn, params={"run_id": run_id})
+            raw["pais"] = raw.apply(
+                lambda r: _pais_from_coords(r["taller_lat"], r["taller_lon"]), axis=1)
+            raw["zona"] = raw["zona"].fillna("Sin zona").str.strip()
+            raw.loc[raw["zona"] == "", "zona"] = "Sin zona"
+            raw["distancia_taller_cercano_km"] = pd.to_numeric(
+                raw["distancia_taller_cercano_km"], errors="coerce")
+            total = len(raw)
+            grp = (
+                raw.groupby(["pais", "zona"])
+                .agg(
+                    unidades=("unit_id", "count"),
+                    talleres=("unit_id", lambda x: 0),  # placeholder
+                    dentro=("dentro_radio_taller", lambda x: x.fillna(False).astype(bool).sum()),
+                    dist_prom=("distancia_taller_cercano_km", "mean"),
+                    dist_max=("distancia_taller_cercano_km", "max"),
+                )
+                .reset_index()
+            )
+            grp["pct_flota"]     = (grp["unidades"] / total * 100).round(1)
+            grp["pct_cobertura"] = (grp["dentro"]   / grp["unidades"] * 100).round(1)
+            grp["dist_prom"]     = grp["dist_prom"].round(1)
+            grp["dist_max"]      = grp["dist_max"].round(1)
+            grp["dentro"]        = grp["dentro"].astype(int)
+            df = grp[["pais","zona","unidades","dentro","pct_flota","pct_cobertura","dist_prom","dist_max"]]
 
     csv_str = df.to_csv(index=False, encoding="utf-8-sig")
     buf = io.BytesIO(csv_str.encode("utf-8-sig"))
