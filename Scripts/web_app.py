@@ -362,7 +362,7 @@ def api_ejecutivo():
         df = pd.read_sql(text("""
             SELECT su.unit_id, su.taller_cercano_nombre, su.distancia_taller_cercano_km,
                    su.dentro_radio_taller, su.empresa, su.patente,
-                   dt.zona, COALESCE(dt.pais, '') AS pais
+                   dt.zona, dt.lat AS taller_lat, dt.lon AS taller_lon
             FROM snapshot_unit su
             LEFT JOIN dim_taller dt ON dt.taller_id = su.taller_cercano_id
             WHERE su.run_id = :run_id
@@ -372,7 +372,8 @@ def api_ejecutivo():
         df["distancia_taller_cercano_km"], errors="coerce")
     df["zona"] = df["zona"].fillna("Sin zona").str.strip()
     df.loc[df["zona"] == "", "zona"] = "Sin zona"
-    df["pais"] = df["pais"].fillna("").str.strip()
+    df["pais"] = df.apply(
+        lambda r: _pais_from_coords(r["taller_lat"], r["taller_lon"]), axis=1)
 
     resumen = (
         df.groupby("taller_cercano_nombre")
@@ -688,15 +689,24 @@ def _estado_mantenimiento(km_restantes: float | None) -> str:
     return "OK"
 
 def _pais_from_lat(lat) -> str:
+    return _pais_from_coords(lat, None)
+
+def _pais_from_coords(lat, lon) -> str:
     try:
         lat = float(lat)
     except (TypeError, ValueError):
         return "Desconocido"
-    if lat <= -17:
-        return "Chile"
     if lat > 0:
         return "Colombia"
-    return "Perú"
+    if lat <= -17:
+        return "Chile"
+    # Distingue Paraguay (lon > -62) de Perú (lon <= -62)
+    try:
+        if float(lon) > -62:
+            return "Paraguay"
+    except (TypeError, ValueError):
+        pass
+    return "Peru"
 
 # ── Route: /api/estado-flota ──────────────────────────────────────────────────
 @app.route("/api/estado-flota")
