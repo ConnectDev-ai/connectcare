@@ -134,6 +134,20 @@ def _ensure_ticket_tables() -> None:
         )""",
         "CREATE INDEX IF NOT EXISTS idx_mt_unit_id ON maintenance_ticket(unit_id)",
         "CREATE INDEX IF NOT EXISTS idx_mt_estado  ON maintenance_ticket(estado)",
+        """CREATE TABLE IF NOT EXISTS maintenance_record (
+            id                SERIAL PRIMARY KEY,
+            unit_id           TEXT NOT NULL,
+            vin               TEXT,
+            patente           TEXT,
+            empresa           TEXT,
+            tipo              TEXT NOT NULL DEFAULT 'mantencion',
+            descripcion       TEXT,
+            realizado_por     TEXT,
+            fecha_realizacion TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ticket_id         INTEGER REFERENCES maintenance_ticket(id),
+            notas             TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mr_unit_id ON maintenance_record(unit_id)",
     ]
     try:
         with engine.begin() as conn:
@@ -144,6 +158,28 @@ def _ensure_ticket_tables() -> None:
         logging.getLogger("geo-workshop").warning("ticket tables init failed: %s", exc)
 
 _ensure_ticket_tables()
+
+
+def _business_days_since(dt) -> int:
+    """Count Mon–Fri business days elapsed since dt (UTC-aware)."""
+    import pandas as _pd
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    if dt is None:
+        return 0
+    if isinstance(dt, _pd.Timestamp):
+        dt = dt.to_pydatetime()
+    if not isinstance(dt, _dt):
+        return 0
+    now = _dt.now(_tz.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_tz.utc)
+    d, today = dt.date(), now.date()
+    count = 0
+    while d < today:
+        d += _td(days=1)
+        if d.weekday() < 5:
+            count += 1
+    return count
 
 
 def _get_token_email() -> str:
@@ -956,18 +992,27 @@ def api_talleres_list():
 @app.route("/api/tickets", methods=["GET"])
 @require_auth
 def api_tickets_list():
-    unit_id = request.args.get("unit_id", "").strip()
-    estado  = request.args.get("estado",  "").strip()
+    unit_id  = request.args.get("unit_id", "").strip()
+    estado   = request.args.get("estado",  "").strip()
+    SLA_DAYS = int(os.getenv("TICKET_SLA_DAYS", "5"))
+    TERMINAL = {"completado", "cerrado", "cancelado"}
     cond, params = ["TRUE"], {}
     if unit_id:
         cond.append("unit_id = :unit_id"); params["unit_id"] = unit_id
-    if estado:
+    if estado and estado != "vencido":
         cond.append("estado  = :estado");  params["estado"]  = estado
     with engine.connect() as conn:
         df = pd.read_sql(
             text(f"SELECT * FROM maintenance_ticket WHERE {' AND '.join(cond)} ORDER BY created_at DESC LIMIT 200"),
             conn, params=params,
         )
+    if not df.empty:
+        df["es_vencido"] = df.apply(
+            lambda r: r["estado"] not in TERMINAL and _business_days_since(r["created_at"]) > SLA_DAYS,
+            axis=1,
+        )
+        if estado == "vencido":
+            df = df[df["es_vencido"]]
     return _json(df.to_dict("records"))
 
 
@@ -1028,10 +1073,11 @@ def api_ticket_patch(ticket_id):
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
         return _json({"error": "Sin campos válidos"}, 400)
-    if updates.get("estado") == "completado" and TICKET_MANAGERS and email not in TICKET_MANAGERS:
+    TERMINAL = {"completado", "cerrado"}
+    if updates.get("estado") in TERMINAL and TICKET_MANAGERS and email not in TICKET_MANAGERS:
         return _json({"error": "Solo gestores pueden cerrar tickets"}, 403)
     extras = ", updated_at = NOW()"
-    if updates.get("estado") == "completado":
+    if updates.get("estado") in TERMINAL:
         extras += ", closed_at = NOW()"
     set_sql = ", ".join(f"{k} = :{k}" for k in updates) + extras
     with engine.begin() as conn:
@@ -1053,6 +1099,111 @@ def api_ticket_note_create(ticket_id):
             VALUES (:tid, :author, :body)
         """), {"tid": ticket_id, "author": _get_token_email() or None, "body": note_body})
     return _json({"ok": True}, 201)
+
+
+@app.route("/api/tickets/kpis")
+@require_auth
+def api_tickets_kpis():
+    SLA_DAYS = int(os.getenv("TICKET_SLA_DAYS", "5"))
+    TERMINAL = {"completado", "cerrado", "cancelado"}
+    with engine.connect() as conn:
+        df = pd.read_sql(text("SELECT * FROM maintenance_ticket ORDER BY created_at DESC"), conn)
+    if df.empty:
+        return _json({"totals": {"total": 0, "abiertos": 0, "vencidos": 0, "completados": 0,
+                                 "pendientes": 0, "en_proceso": 0, "sla_days": SLA_DAYS},
+                      "by_assignee": [], "overdue": []})
+    df["es_terminal"] = df["estado"].isin(TERMINAL)
+    df["es_vencido"]  = df.apply(
+        lambda r: not r["es_terminal"] and _business_days_since(r["created_at"]) > SLA_DAYS, axis=1
+    )
+    totals = {
+        "total":       len(df),
+        "abiertos":    int((~df["es_terminal"]).sum()),
+        "vencidos":    int(df["es_vencido"].sum()),
+        "completados": int(df["estado"].isin({"completado", "cerrado"}).sum()),
+        "pendientes":  int((df["estado"] == "pendiente").sum()),
+        "en_proceso":  int((df["estado"] == "en_proceso").sum()),
+        "sla_days":    SLA_DAYS,
+    }
+    by_asgn = []
+    for assignee, grp in df.groupby(df["assigned_to"].fillna("Sin asignar")):
+        completed = grp[grp["estado"].isin({"completado", "cerrado"})]
+        avg_h = None
+        if not completed.empty:
+            with_close = completed.dropna(subset=["closed_at"])
+            if not with_close.empty:
+                deltas = (with_close["closed_at"] - with_close["created_at"]).dt.total_seconds() / 3600
+                avg_h  = round(float(deltas.mean()), 1)
+        by_asgn.append({
+            "assigned_to":          str(assignee),
+            "total":                len(grp),
+            "abiertos":             int((~grp["es_terminal"]).sum()),
+            "vencidos":             int(grp["es_vencido"].sum()),
+            "completados":          int(grp["es_terminal"].sum()),
+            "avg_horas_resolucion": avg_h,
+        })
+    by_asgn.sort(key=lambda x: x["abiertos"], reverse=True)
+    overdue = []
+    for _, row in df[df["es_vencido"]].iterrows():
+        overdue.append({
+            "id":          int(row["id"]),
+            "unit_id":     row.get("unit_id",     "") or "",
+            "patente":     row.get("patente",     "") or "",
+            "empresa":     row.get("empresa",     "") or "",
+            "assigned_to": row.get("assigned_to", "") or "",
+            "estado":      row.get("estado",      "") or "",
+            "created_at":  str(row.get("created_at", "")),
+            "dias_habiles": _business_days_since(row["created_at"]),
+        })
+    return _json({"totals": totals, "by_assignee": by_asgn, "overdue": overdue})
+
+
+@app.route("/api/maintenance-records", methods=["GET"])
+@require_auth
+def api_maintenance_records_list():
+    unit_id = request.args.get("unit_id", "").strip()
+    cond, params = ["TRUE"], {}
+    if unit_id:
+        cond.append("unit_id = :unit_id"); params["unit_id"] = unit_id
+    with engine.connect() as conn:
+        df = pd.read_sql(
+            text(f"SELECT * FROM maintenance_record WHERE {' AND '.join(cond)} ORDER BY fecha_realizacion DESC LIMIT 100"),
+            conn, params=params,
+        )
+    return _json(df.to_dict("records"))
+
+
+@app.route("/api/maintenance-records", methods=["POST"])
+@require_auth
+def api_maintenance_records_create():
+    body    = request.get_json(silent=True) or {}
+    unit_id = (body.get("unit_id") or "").strip()
+    if not unit_id:
+        return _json({"error": "unit_id requerido"}, 400)
+    ticket_id = body.get("ticket_id")
+    with engine.begin() as conn:
+        row = conn.execute(text("""
+            INSERT INTO maintenance_record
+                (unit_id, vin, patente, empresa, tipo, descripcion, realizado_por, notas, ticket_id)
+            VALUES (:unit_id,:vin,:patente,:empresa,:tipo,:descripcion,:realizado_por,:notas,:ticket_id)
+            RETURNING id
+        """), {
+            "unit_id":       unit_id,
+            "vin":           body.get("vin")         or None,
+            "patente":       body.get("patente")     or None,
+            "empresa":       body.get("empresa")     or None,
+            "tipo":          body.get("tipo",        "mantencion"),
+            "descripcion":   body.get("descripcion") or None,
+            "realizado_por": _get_token_email()      or None,
+            "notas":         body.get("notas")       or None,
+            "ticket_id":     int(ticket_id) if ticket_id else None,
+        }).fetchone()
+        rid = int(row[0])
+        if ticket_id and body.get("cerrar_ticket"):
+            conn.execute(text(
+                "UPDATE maintenance_ticket SET estado='completado',closed_at=NOW(),updated_at=NOW() WHERE id=:id"
+            ), {"id": int(ticket_id)})
+    return _json({"id": rid}, 201)
 
 
 # ── Dev server ────────────────────────────────────────────────────────────────

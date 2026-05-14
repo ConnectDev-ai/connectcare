@@ -921,6 +921,21 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
         <div id="page-estado-flota" class="page-panel">
             <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
 
+                <!-- Tab switcher -->
+                <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid rgba(53,53,52,0.4)">
+                    <button id="ef-tab-flota" onclick="efSwitchTab('flota')"
+                        style="padding:9px 20px;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;
+                               color:#e5e2e1;border-bottom:2px solid #f2be8c;transition:color 0.15s">
+                        <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:4px">build_circle</span>Estado de Flota
+                    </button>
+                    <button id="ef-tab-tickets" onclick="efSwitchTab('tickets')"
+                        style="padding:9px 20px;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;
+                               color:rgba(229,226,225,0.45);border-bottom:2px solid transparent;transition:color 0.15s">
+                        <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:4px">assignment</span>Gestión de Tickets
+                    </button>
+                </div>
+
+                <div id="ef-flota-content">
                 <!-- KPI Cards -->
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5" id="ef-kpis" style="display:none!important">
                     <div class="section-card text-center">
@@ -1008,6 +1023,58 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                     <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-2">Umbrales por marca (km)</div>
                     <div id="ef-legend-body" class="flex flex-wrap gap-2"></div>
                 </div>
+                </div><!-- end ef-flota-content -->
+
+                <!-- ── Ticket KPI Panel ── -->
+                <div id="ef-tickets-panel" style="display:none">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                        <div class="section-card text-center">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Abiertos</div>
+                            <div class="serif text-2xl font-bold text-[#f2be8c]" id="tk-abiertos">—</div>
+                        </div>
+                        <div class="section-card text-center" style="border-color:rgba(239,68,68,0.3)">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Vencidos &gt;5 días háb.</div>
+                            <div class="serif text-2xl font-bold text-red-400" id="tk-vencidos">—</div>
+                        </div>
+                        <div class="section-card text-center">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">En proceso</div>
+                            <div class="serif text-2xl font-bold text-[#34b5fa]" id="tk-en-proceso">—</div>
+                        </div>
+                        <div class="section-card text-center" style="border-color:rgba(74,222,128,0.25)">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Completados</div>
+                            <div class="serif text-2xl font-bold text-green-400" id="tk-completados">—</div>
+                        </div>
+                    </div>
+
+                    <div class="section-card mb-4" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;justify-content:space-between">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span class="icon" style="font-size:16px;color:#f2be8c">group</span>
+                                <span style="font-size:12px;font-weight:700;color:#e5e2e1">Por Ejecutivo</span>
+                            </div>
+                            <button onclick="loadTicketKpis()"
+                                style="font-size:11px;color:rgba(229,226,225,0.45);background:none;border:none;
+                                       cursor:pointer;display:flex;align-items:center;gap:4px">
+                                <span class="icon" style="font-size:14px">refresh</span>Actualizar
+                            </button>
+                        </div>
+                        <div id="tk-by-assignee">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+
+                    <div class="section-card" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;gap:8px">
+                            <span class="icon" style="font-size:16px;color:#f87171">schedule</span>
+                            <span style="font-size:12px;font-weight:700;color:#f87171">Tickets Vencidos</span>
+                            <span style="font-size:11px;color:rgba(229,226,225,0.4)" id="tk-overdue-count"></span>
+                        </div>
+                        <div id="tk-overdue-list">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+                </div><!-- end ef-tickets-panel -->
+
             </div>
         </div><!-- end page-estado-flota -->
 
@@ -2681,7 +2748,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     <div id="td-unit"   style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
     <div id="td-ticket" style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
-    <div id="td-notes"  style="padding:16px 20px"></div>
+    <div id="td-notes"  style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
+    <div id="td-mant"   style="padding:16px 20px"></div>
 </aside>
 
 <script>
@@ -2719,6 +2787,7 @@ async function openTicketDrawer(idx) {
     _renderTdUnit(_tdCurrentUnit);
     document.getElementById('td-ticket').innerHTML = '<div style="color:rgba(229,226,225,0.4);font-size:12px;padding:4px 0">Cargando…</div>';
     document.getElementById('td-notes').innerHTML  = '';
+    document.getElementById('td-mant').innerHTML   = '';
     await _ensureTdTalleres();
     _loadTdTickets(_tdCurrentUnit.unit_id);
 }
@@ -2744,6 +2813,9 @@ const _TD_TK = {
     pendiente:  () => _tdBadge('Pendiente',  'rgba(242,190,140,0.15)', '#f2be8c', 'rgba(242,190,140,0.35)'),
     en_proceso: () => _tdBadge('En proceso', 'rgba(52,181,250,0.15)',  '#34b5fa', 'rgba(52,181,250,0.35)'),
     completado: () => _tdBadge('Completado', 'rgba(74,222,128,0.15)',  '#4ade80', 'rgba(74,222,128,0.35)'),
+    cerrado:    () => _tdBadge('Cerrado',    'rgba(74,222,128,0.15)',  '#4ade80', 'rgba(74,222,128,0.35)'),
+    cancelado:  () => _tdBadge('Cancelado',  'rgba(53,53,52,0.4)',     'rgba(229,226,225,0.3)', 'rgba(53,53,52,0.5)'),
+    vencido:    () => _tdBadge('Vencido ⚠',  'rgba(239,68,68,0.15)',   '#f87171', 'rgba(239,68,68,0.35)'),
 };
 const _TD_PR = {
     alta:  () => _tdBadge('Alta',  'rgba(239,68,68,0.15)',  '#f87171', 'rgba(239,68,68,0.35)'),
@@ -2802,11 +2874,12 @@ function _tdFmtDate(dt) {
 }
 
 async function _loadTdTickets(unit_id) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
     try {
         const r    = await authFetch('/api/tickets?unit_id=' + encodeURIComponent(unit_id));
         const list = await r.json();
-        const open = (list || []).find(t => t.estado !== 'completado');
-        const closedCount = (list || []).filter(t => t.estado === 'completado').length;
+        const open = (list || []).find(t => !TERMINAL.has(t.estado));
+        const closedCount = (list || []).filter(t => TERMINAL.has(t.estado)).length;
         if (open) {
             const r2   = await authFetch('/api/tickets/' + open.id);
             const full = await r2.json();
@@ -2818,14 +2891,16 @@ async function _loadTdTickets(unit_id) {
             _renderTdTicket(null, closedCount);
             document.getElementById('td-notes').innerHTML = '';
         }
+        _loadMantencionHistory(unit_id);
     } catch(e) {
         document.getElementById('td-ticket').innerHTML = `<div style="color:#f87171;font-size:11px">Error: ${e.message}</div>`;
     }
 }
 
 function _renderTdTicket(ticket, closedCount) {
-    const el   = document.getElementById('td-ticket');
-    const pais = _tdCurrentUnit ? (_tdCurrentUnit.pais || '') : '';
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const el            = document.getElementById('td-ticket');
+    const pais          = _tdCurrentUnit ? (_tdCurrentUnit.pais  || '') : '';
     const nearestTaller = _tdCurrentUnit ? (_tdCurrentUnit.taller || '') : '';
     if (!ticket) {
         el.innerHTML = `
@@ -2878,15 +2953,18 @@ function _renderTdTicket(ticket, closedCount) {
         return;
     }
 
-    const tkBadge = (_TD_TK[ticket.estado] || _TD_TK.pendiente)();
+    const tkBadge = (ticket.es_vencido ? _TD_TK.vencido : (_TD_TK[ticket.estado] || _TD_TK.pendiente))();
     const prBadge = (_TD_PR[ticket.prioridad] || _TD_PR.media)();
     el.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
             <div>
                 <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">Orden #${ticket.id}</span>
-                <div style="font-size:10px;color:rgba(229,226,225,0.4);margin-top:3px">Creada ${_tdFmtDate(ticket.created_at)}</div>
+                <div style="font-size:10px;color:rgba(229,226,225,0.4);margin-top:3px">
+                    Creada ${_tdFmtDate(ticket.created_at)}
+                    ${ticket.closed_at ? ` · Cerrada ${_tdFmtDate(ticket.closed_at)}` : ''}
+                </div>
             </div>
-            <div style="display:flex;gap:6px;align-items:center">${prBadge} ${tkBadge}</div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${prBadge} ${tkBadge}</div>
         </div>
 
         ${ticket.descripcion ? `
@@ -2905,7 +2983,7 @@ function _renderTdTicket(ticket, closedCount) {
             </div>
         </div>
 
-        ${ticket.estado !== 'completado' ? `
+        ${!TERMINAL.has(ticket.estado) ? `
         <div style="margin-bottom:14px">
             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Asignar a taller</label>
             <div style="display:flex;gap:8px;align-items:center">
@@ -2931,56 +3009,62 @@ function _renderTdTicket(ticket, closedCount) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${ticket.estado === 'pendiente' ? `
             <button onclick="_tdSetStatus('en_proceso')"
-                style="padding:7px 16px;border-radius:8px;background:rgba(52,181,250,0.1);color:#34b5fa;
+                style="padding:7px 14px;border-radius:8px;background:rgba(52,181,250,0.1);color:#34b5fa;
                        border:1px solid rgba(52,181,250,0.3);font-size:12px;font-weight:700;cursor:pointer">
-                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">play_arrow</span>Iniciar trabajo
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">play_arrow</span>Iniciar
             </button>` : ''}
-            ${ticket.estado === 'en_proceso' ? `
+            ${!TERMINAL.has(ticket.estado) ? `
             <button onclick="_tdSetStatus('completado')"
-                style="padding:7px 16px;border-radius:8px;background:rgba(74,222,128,0.1);color:#4ade80;
+                style="padding:7px 14px;border-radius:8px;background:rgba(74,222,128,0.1);color:#4ade80;
                        border:1px solid rgba(74,222,128,0.3);font-size:12px;font-weight:700;cursor:pointer">
                 <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">check_circle</span>Completar
-            </button>` : ''}
-            ${ticket.estado === 'completado' ? `
-            <button onclick="_tdSetStatus('pendiente')"
-                style="padding:7px 16px;border-radius:8px;background:rgba(53,53,52,0.3);color:rgba(229,226,225,0.6);
+            </button>
+            <button onclick="_tdSetStatus('cancelado')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(53,53,52,0.3);color:rgba(229,226,225,0.5);
                        border:1px solid rgba(53,53,52,0.5);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">cancel</span>Cancelar
+            </button>` : ''}
+            ${TERMINAL.has(ticket.estado) ? `
+            <button onclick="_tdSetStatus('pendiente')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(242,190,140,0.1);color:#f2be8c;
+                       border:1px solid rgba(242,190,140,0.3);font-size:12px;font-weight:700;cursor:pointer">
                 <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">refresh</span>Reabrir
             </button>` : ''}
         </div>`;
 }
 
 function _renderTdNotes(ticket) {
-    const notes = ticket.notes || [];
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const notes    = ticket.notes || [];
     document.getElementById('td-notes').innerHTML = `
-        <div style="font-size:11px;font-weight:700;color:#ecedf6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">
-            Notas <span style="color:#a9abb3;font-weight:400">(${notes.length})</span>
+        <div class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em] mb-3">
+            Notas <span style="color:rgba(229,226,225,0.4);font-weight:400">(${notes.length})</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
-            ${notes.length === 0 ? '<div style="font-size:11px;color:#a9abb3">Sin notas.</div>' : ''}
+            ${notes.length === 0 ? '<div style="font-size:11px;color:rgba(229,226,225,0.3)">Sin notas.</div>' : ''}
             ${notes.map(n => `
-            <div style="background:#161a21;border-radius:8px;padding:10px 12px;border:1px solid rgba(69,72,79,0.15)">
+            <div class="section-card" style="padding:10px 14px">
                 <div style="display:flex;justify-content:space-between;margin-bottom:5px">
-                    <span style="font-size:10px;font-weight:600;color:#bd9dff">${escHtml(n.author||'Anónimo')}</span>
-                    <span style="font-size:10px;color:#a9abb3">${_tdFmtDate(n.created_at)}</span>
+                    <span style="font-size:10px;font-weight:700;color:#f2be8c">${escHtml(n.author||'Anónimo')}</span>
+                    <span style="font-size:10px;color:rgba(229,226,225,0.4)">${_tdFmtDate(n.created_at)}</span>
                 </div>
-                <div style="font-size:12px;color:#ecedf6;line-height:1.5;white-space:pre-wrap">${escHtml(n.body)}</div>
+                <div style="font-size:12px;color:#e5e2e1;line-height:1.5;white-space:pre-wrap">${escHtml(n.body)}</div>
             </div>`).join('')}
         </div>
-        ${ticket.estado !== 'completado' ? `
-        <div style="background:#161a21;border-radius:10px;padding:12px;border:1px solid rgba(69,72,79,0.15)">
-            <label style="font-size:10px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:6px">Agregar nota</label>
+        ${!TERMINAL.has(ticket.estado) ? `
+        <div class="section-card" style="padding:14px">
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Agregar nota</label>
             <textarea id="td-note-inp" rows="3" placeholder="Escribe una observación…"
-                style="width:100%;background:#0b0e14;border:1px solid rgba(69,72,79,0.3);border-radius:6px;
-                       padding:8px 10px;color:#ecedf6;font-size:12px;resize:vertical;outline:none;
-                       font-family:inherit;box-sizing:border-box;margin-bottom:8px"></textarea>
+                style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                       padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                       resize:vertical;outline:none;box-sizing:border-box;margin-bottom:10px"></textarea>
             <button onclick="_tdAddNote()"
-                style="width:100%;padding:7px;border-radius:8px;background:rgba(189,157,255,0.08);
-                       color:#bd9dff;border:1px solid rgba(189,157,255,0.25);font-size:12px;
+                style="width:100%;padding:7px;border-radius:8px;background:rgba(242,190,140,0.1);
+                       color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:12px;
                        font-weight:700;cursor:pointer">
                 <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">add_comment</span>Agregar nota
             </button>
-        </div>` : '<div style="font-size:11px;color:#a9abb3;padding:4px 0">Orden cerrada — no se pueden agregar notas.</div>'}`;
+        </div>` : '<div style="font-size:11px;color:rgba(229,226,225,0.3);padding:4px 0">Orden cerrada — sin nuevas notas.</div>'}`;
 }
 
 async function _tdCreateTicket() {
@@ -3058,6 +3142,242 @@ async function _tdAddNote() {
     } catch(e) {
         alert('Error al agregar nota: ' + e.message);
         if (btn) { btn.disabled = false; }
+    }
+}
+
+// ═══ Tab switcher — Estado de Flota / Gestión de Tickets ══════════════════
+function efSwitchTab(tab) {
+    const isFlota = tab === 'flota';
+    const fBtn = document.getElementById('ef-tab-flota');
+    const tBtn = document.getElementById('ef-tab-tickets');
+    if (fBtn) {
+        fBtn.style.borderBottomColor = isFlota ? '#f2be8c' : 'transparent';
+        fBtn.style.color             = isFlota ? '#e5e2e1' : 'rgba(229,226,225,0.45)';
+    }
+    if (tBtn) {
+        tBtn.style.borderBottomColor = isFlota ? 'transparent' : '#f2be8c';
+        tBtn.style.color             = isFlota ? 'rgba(229,226,225,0.45)' : '#e5e2e1';
+    }
+    const flota  = document.getElementById('ef-flota-content');
+    const ticket = document.getElementById('ef-tickets-panel');
+    if (flota)  flota.style.display  = isFlota ? '' : 'none';
+    if (ticket) ticket.style.display = isFlota ? 'none' : 'block';
+    if (!isFlota) loadTicketKpis();
+}
+
+// ═══ Ticket KPI Dashboard ══════════════════════════════════════════════════
+async function loadTicketKpis() {
+    ['tk-abiertos','tk-vencidos','tk-en-proceso','tk-completados'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.textContent = '—';
+    });
+    const byEl = document.getElementById('tk-by-assignee');
+    const ovEl = document.getElementById('tk-overdue-list');
+    if (byEl) byEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    if (ovEl) ovEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    try {
+        const r    = await authFetch('/api/tickets/kpis');
+        const data = await r.json();
+        if (data.error) throw new Error(data.error);
+        renderTicketKpis(data);
+    } catch(e) {
+        if (byEl) byEl.innerHTML = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
+    }
+}
+
+function renderTicketKpis(data) {
+    const t = data.totals || {};
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '—'; };
+    setEl('tk-abiertos',   t.abiertos);
+    setEl('tk-vencidos',   t.vencidos);
+    setEl('tk-en-proceso', t.en_proceso);
+    setEl('tk-completados',t.completados);
+
+    // By assignee table
+    const byEl = document.getElementById('tk-by-assignee');
+    if (byEl) {
+        if (!data.by_assignee || data.by_assignee.length === 0) {
+            byEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets registrados</div>';
+        } else {
+            byEl.innerHTML = `<table class="data-table">
+                <thead><tr>
+                    <th>Ejecutivo / Taller</th><th>Total</th><th>Abiertos</th>
+                    <th>Vencidos</th><th>Completados</th><th>Prom. cierre</th>
+                </tr></thead>
+                <tbody>${data.by_assignee.map(a => `
+                <tr>
+                    <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis">${escHtml(a.assigned_to||'Sin asignar')}</td>
+                    <td>${a.total}</td>
+                    <td>${a.abiertos   > 0 ? `<span style="color:#f2be8c;font-weight:700">${a.abiertos}</span>`   : '0'}</td>
+                    <td>${a.vencidos   > 0 ? `<span style="color:#f87171;font-weight:700">${a.vencidos}</span>`   : '0'}</td>
+                    <td>${a.completados > 0 ? `<span style="color:#4ade80;font-weight:700">${a.completados}</span>` : '0'}</td>
+                    <td>${a.avg_horas_resolucion != null ? `${a.avg_horas_resolucion} h` : '—'}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+    }
+
+    // Overdue tickets
+    const ovEl   = document.getElementById('tk-overdue-list');
+    const ovCnt  = document.getElementById('tk-overdue-count');
+    if (ovCnt) ovCnt.textContent = data.overdue && data.overdue.length > 0 ? `(${data.overdue.length})` : '';
+    if (ovEl) {
+        if (!data.overdue || data.overdue.length === 0) {
+            ovEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets vencidos ✓</div>';
+        } else {
+            ovEl.innerHTML = `<table class="data-table">
+                <thead><tr><th>#</th><th>Patente</th><th>Empresa</th><th>Asignado a</th><th>Estado</th><th>Días háb.</th><th>Desde</th></tr></thead>
+                <tbody>${data.overdue.map(o => `
+                <tr>
+                    <td><span style="font-family:monospace;color:#f2be8c">#${o.id}</span></td>
+                    <td style="font-weight:600">${escHtml(o.patente||o.unit_id||'—')}</td>
+                    <td>${escHtml(o.empresa||'—')}</td>
+                    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${escHtml(o.assigned_to||'—')}</td>
+                    <td><span style="color:#f2be8c;font-size:10px;font-weight:700;text-transform:uppercase">${escHtml(o.estado)}</span></td>
+                    <td><span style="color:#f87171;font-weight:700">${o.dias_habiles}</span></td>
+                    <td style="font-size:11px;color:rgba(229,226,225,0.4)">${_tdFmtDate(o.created_at)}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+    }
+}
+
+// ═══ Historial de Mantenciones ════════════════════════════════════════════
+async function _loadMantencionHistory(unit_id) {
+    const el = document.getElementById('td-mant');
+    if (!el) return;
+    el.innerHTML = '<div style="color:rgba(229,226,225,0.3);font-size:11px;padding:4px 0">Cargando historial…</div>';
+    try {
+        const r    = await authFetch('/api/maintenance-records?unit_id=' + encodeURIComponent(unit_id));
+        const list = await r.json();
+        _renderTdMant(Array.isArray(list) ? list : []);
+    } catch(_) { _renderTdMant([]); }
+}
+
+function _renderTdMant(records) {
+    const el       = document.getElementById('td-mant');
+    if (!el) return;
+    const ticketId = _tdActiveTicket ? _tdActiveTicket.id : null;
+    const TIPO_LBL = {
+        mantencion: 'Mantención preventiva',
+        dtc:        'Revisión DTC',
+        inspeccion: 'Inspección',
+        otro:       'Otro',
+    };
+    el.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">
+                Historial de Mantenciones
+                <span style="color:rgba(229,226,225,0.4);font-weight:400">(${records.length})</span>
+            </span>
+            <button onclick="_tdToggleMantForm()" id="td-mant-toggle-btn"
+                style="padding:5px 12px;border-radius:6px;background:rgba(242,190,140,0.1);
+                       color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:11px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">add</span>Registrar
+            </button>
+        </div>
+
+        <div id="td-mant-form" class="section-card" style="display:none;padding:14px;margin-bottom:14px">
+            <div class="text-[10px] text-[#f2be8c] font-bold tracking-wider uppercase mb-3">Registrar mantención realizada</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Tipo</label>
+                    <select id="td-mant-tipo">
+                        <option value="mantencion">Mantención preventiva</option>
+                        <option value="dtc">Revisión DTC</option>
+                        <option value="inspeccion">Inspección</option>
+                        <option value="otro">Otro</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+                    ${ticketId ? `
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#e5e2e1">
+                        <input type="checkbox" id="td-mant-cerrar" checked style="width:15px;height:15px;accent-color:#f2be8c">
+                        <span>Cerrar ticket #${ticketId}</span>
+                    </label>` : '<div></div>'}
+                </div>
+            </div>
+
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Descripción</label>
+            <input type="text" id="td-mant-desc" placeholder="Ej: Cambio de aceite 15W-40, filtros…"
+                style="margin-bottom:10px;width:100%;box-sizing:border-box">
+
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Notas adicionales</label>
+            <textarea id="td-mant-notas" rows="2" placeholder="Observaciones, próxima mantención…"
+                style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                       padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                       resize:vertical;outline:none;box-sizing:border-box;margin-bottom:12px"></textarea>
+
+            <button onclick="_tdRegisterMantencion()"
+                style="width:100%;padding:9px;border-radius:8px;
+                       background:linear-gradient(135deg,#f2be8c,#e5784e);color:#1c1b1b;
+                       font-weight:700;font-size:12px;border:none;cursor:pointer;letter-spacing:0.05em">
+                <span class="icon" style="font-size:15px;vertical-align:middle;margin-right:4px">task_alt</span>Registrar mantención
+            </button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+            ${records.length === 0 ? '<div style="font-size:11px;color:rgba(229,226,225,0.3)">Sin mantenciones registradas.</div>' : ''}
+            ${records.map(rec => `
+            <div class="section-card" style="padding:10px 14px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span class="icon" style="font-size:16px;color:#4ade80">task_alt</span>
+                        <span style="font-size:12px;font-weight:600;color:#e5e2e1">${escHtml(TIPO_LBL[rec.tipo] || rec.tipo || 'Mantención')}</span>
+                    </div>
+                    <span style="font-size:10px;color:rgba(229,226,225,0.4)">${_tdFmtDate(rec.fecha_realizacion)}</span>
+                </div>
+                ${rec.descripcion ? `<div style="font-size:12px;color:rgba(229,226,225,0.7);margin-bottom:4px">${escHtml(rec.descripcion)}</div>` : ''}
+                ${rec.notas       ? `<div style="font-size:11px;color:rgba(229,226,225,0.45);margin-bottom:4px">${escHtml(rec.notas)}</div>` : ''}
+                <div style="font-size:10px;color:rgba(229,226,225,0.3)">
+                    Realizado por <strong style="color:rgba(229,226,225,0.5)">${escHtml(rec.realizado_por||'—')}</strong>
+                    ${rec.ticket_id ? `<span style="margin-left:6px">· Ticket #${rec.ticket_id}</span>` : ''}
+                </div>
+            </div>`).join('')}
+        </div>`;
+}
+
+function _tdToggleMantForm() {
+    const form = document.getElementById('td-mant-form');
+    if (!form) return;
+    const show = form.style.display === 'none';
+    form.style.display = show ? 'block' : 'none';
+    const btn = document.getElementById('td-mant-toggle-btn');
+    if (btn) btn.innerHTML = show
+        ? '<span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">close</span>Cancelar'
+        : '<span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">add</span>Registrar';
+}
+
+async function _tdRegisterMantencion() {
+    if (!_tdCurrentUnit) return;
+    const tipo     = document.getElementById('td-mant-tipo')?.value   || 'mantencion';
+    const desc     = (document.getElementById('td-mant-desc')?.value  || '').trim();
+    const notas    = (document.getElementById('td-mant-notas')?.value || '').trim();
+    const cerrar   = document.getElementById('td-mant-cerrar')?.checked;
+    const ticketId = _tdActiveTicket ? _tdActiveTicket.id : null;
+    const btn      = document.querySelector('#td-mant-form button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
+    try {
+        const res = await authFetch('/api/maintenance-records', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                unit_id:       _tdCurrentUnit.unit_id,
+                vin:           _tdCurrentUnit.vin     || null,
+                patente:       _tdCurrentUnit.patente || null,
+                empresa:       _tdCurrentUnit.empresa || null,
+                tipo,
+                descripcion:   desc  || null,
+                notas:         notas || null,
+                ticket_id:     ticketId,
+                cerrar_ticket: !!(cerrar && ticketId),
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+        await _loadTdTickets(_tdCurrentUnit.unit_id);
+    } catch(e) {
+        alert('Error: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Registrar mantención'; }
     }
 }
 </script>
