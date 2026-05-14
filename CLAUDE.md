@@ -82,16 +82,17 @@ There is no test suite. This is a data pipeline + API project with no automated 
 
 ### Data Flow
 ```
-Copiloto API
-    ↓
-Scripts/app.py  ←  Data/master_Flota.xlsx + Data/talleres.xlsx
-    ↓
-PostgreSQL/PostGIS (Neon in production, local Docker for dev)
-    ↓
+Copiloto API ──┐
+               ├──→ Scripts/app.py  ←  Data/master_Flota.xlsx + Data/talleres.xlsx
+Geotab API  ──┘         ↓
+                PostgreSQL/PostGIS (Neon in production, local Docker for dev)
+                         ↓
 Scripts/web_app.py  (Flask REST API on /api/*)          Scripts/viewer_hex.py
-    ↓                                                    (connects to DB directly,
+         ↓                                               (connects to DB directly,
 Scripts/templates/connect_talleres.html                   not via Flask)
 ```
+
+Geotab is an optional second vehicle source — credentials checked at startup; if absent the step is silently skipped. In `main()`, Copiloto units are loaded first; Geotab then appends only units whose `unit_id` is not already present (Copiloto takes precedence on duplicates).
 
 ### Key Files
 
@@ -135,11 +136,13 @@ All routes require `Authorization: Bearer <supabase_token>` in production. Rate 
 
 **Schema migrations**: `run_migrations()` in `app.py` runs `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements on every pipeline execution. Add new columns there — it is safe to re-run.
 
-**Coordinate swap guard**: `_fix_coords()` in `web_app.py` detects and corrects swapped lat/lon values by checking whether coordinates fall within Chilean bounding boxes (`lat ∈ [-56, -17]`, `lon ∈ [-76, -66]`).
+**Coordinate swap guard**: `_fix_coords()` in `web_app.py` detects swapped lat/lon on taller records specifically — called inside `_clean_talleres()`, not `_clean_units()`. Swaps are detected by checking if the coordinates fall outside the Chilean bounding box (`lat ∈ [-56, -17]`, `lon ∈ [-76, -66]`) but would be valid if swapped.
 
 **Maintenance thresholds**: `_UMBRALES_KM` in `web_app.py` maps truck brands to service interval km. Detection is by substring match against the `modelo` field. The full dict covers FREIGHTLINER, KENWORTH, PETERBILT, SCANIA, VOLVO, MERCEDES, MAN, DAF, IVECO, FORD, TOYOTA, KOMATSU, CATERPILLAR, and BOMAG; default is 20,000 km for unknown brands.
 
 **DTC fault data**: `web_app.py` loads the most recent `Data/reporte_fallas_*.xlsx` at module startup into `_FALLAS_BY_VIN` (keyed by VIN). Required columns: `vin`, `affected_parameter`, `PRIORIDAD`. Only the lexicographically last file is loaded. **Requires a server restart to pick up a new file.**
+
+**VIN decode cache**: `Data/vin_cache.json` persists WMI/NHTSA decode results across pipeline runs (keyed by the first 8 chars of each VIN). Loaded at the start of `fetch_geotab_units()` and saved after all databases are processed. Delete this file to force a full re-decode.
 
 **Supabase token verification** (`_verify_supabase_token`): three-tier fallback — (1) live call to `SUPABASE_URL/auth/v1/user`, (2) JWT decode without signature check (validates `exp`, `aud`, `role` claims), (3) local HS256 verify with `SUPABASE_JWT_SECRET`. Valid tokens are cached for 5 minutes.
 
@@ -147,9 +150,13 @@ All routes require `Authorization: Bearer <supabase_token>` in production. Rate 
 
 `Scripts/config.toml` defines the Streamlit dark theme. For Streamlit to pick it up, it must be at `.streamlit/config.toml` relative to the working directory when `streamlit run` is invoked (i.e., `Scripts/.streamlit/config.toml`).
 
+### Vercel Deployment
+
+`vercel.json` routes all traffic to `api/index.py`, which is a one-file shim that adds `Scripts/` to `sys.path` and re-exports the Flask `app` object as a Vercel serverless function. No build step needed — the Flask app runs as-is. Environment variables must be set in the Vercel project dashboard (same names as the `.env` table above).
+
 ### Automation
 
-GitHub Actions workflow `.github/workflows/daily_pipeline.yml` runs `app.py` daily at 2 PM UTC (11 AM Santiago). Copiloto credentials and `PGPASSWORD` are repository secrets; Neon host/db/user are hardcoded in the workflow YAML.
+GitHub Actions workflow `.github/workflows/daily_pipeline.yml` runs `app.py` daily at 2 PM UTC (11 AM Santiago). Copiloto credentials, Geotab credentials, and `PGPASSWORD` are repository secrets; Neon host/db/user and Geotab database names are hardcoded in the workflow YAML.
 
 ## Data Files
 

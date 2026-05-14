@@ -73,6 +73,7 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SUPABASE_URL        = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_ANON_KEY   = os.getenv("SUPABASE_ANON_KEY", "").strip()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+TICKET_MANAGERS = [e.strip() for e in os.getenv("TICKET_MANAGERS", "").split(",") if e.strip()]
 
 # Cache de tokens válidos: {token: expiry_epoch}
 _token_cache: dict[str, float] = {}
@@ -103,6 +104,58 @@ def _load_fallas() -> dict[str, list[dict]]:
         return {}
 
 _FALLAS_BY_VIN: dict[str, list[dict]] = _load_fallas()
+
+# ── Maintenance tickets ────────────────────────────────────────────────────────
+def _ensure_ticket_tables() -> None:
+    """Create ticket tables on startup — idempotent."""
+    stmts = [
+        """CREATE TABLE IF NOT EXISTS maintenance_ticket (
+            id          SERIAL PRIMARY KEY,
+            unit_id     TEXT NOT NULL,
+            vin         TEXT,
+            patente     TEXT,
+            empresa     TEXT,
+            run_id      INTEGER,
+            estado      TEXT NOT NULL DEFAULT 'pendiente',
+            prioridad   TEXT NOT NULL DEFAULT 'media',
+            descripcion TEXT,
+            assigned_to TEXT,
+            created_by  TEXT,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            closed_at   TIMESTAMPTZ
+        )""",
+        """CREATE TABLE IF NOT EXISTS maintenance_ticket_note (
+            id         SERIAL PRIMARY KEY,
+            ticket_id  INTEGER NOT NULL REFERENCES maintenance_ticket(id) ON DELETE CASCADE,
+            author     TEXT,
+            body       TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mt_unit_id ON maintenance_ticket(unit_id)",
+        "CREATE INDEX IF NOT EXISTS idx_mt_estado  ON maintenance_ticket(estado)",
+    ]
+    try:
+        with engine.begin() as conn:
+            for s in stmts:
+                conn.execute(text(s))
+    except Exception as exc:
+        import logging
+        logging.getLogger("geo-workshop").warning("ticket tables init failed: %s", exc)
+
+_ensure_ticket_tables()
+
+
+def _get_token_email() -> str:
+    """Extract email from the Authorization JWT without signature verification."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or pyjwt is None:
+        return ""
+    try:
+        payload = pyjwt.decode(auth[7:], options={"verify_signature": False})
+        return (payload.get("email") or "").strip()
+    except Exception:
+        return ""
 
 # ── Flask ─────────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -727,7 +780,7 @@ def api_estado_flota():
                    su.taller_cercano_nombre AS taller,
                    su.distancia_taller_cercano_km,
                    su.can_odometer, su.can_horometer, su.has_can_data,
-                   su.lat
+                   su.lat, su.lon
             FROM snapshot_unit su
             WHERE su.run_id = :run_id
         """), conn, params={"run_id": run_id})
@@ -771,7 +824,7 @@ def api_estado_flota():
             "empresa":             _safe_str(r["empresa"]),
             "modelo":              _safe_str(r["modelo"]),
             "taller":              _safe_str(r["taller"]),
-            "pais":                _pais_from_lat(r.get("lat")),
+            "pais":                _pais_from_coords(r.get("lat"), r.get("lon")),
             "distancia_km":        None if pd.isna(r.get("distancia_taller_cercano_km")) else round(float(r["distancia_taller_cercano_km"]), 1),
             "can_odometer":        None if odo  is None else round(float(odo),  0),
             "can_horometer":       None if hora is None else round(float(hora), 1),
@@ -886,6 +939,109 @@ def api_export(tipo: str):
     fname = f"{tipo}_{(snap_ts or 'export')[:10]}.csv"
     return send_file(buf, mimetype="text/csv",
                      as_attachment=True, download_name=fname)
+
+# ── Routes: gestión de tickets ────────────────────────────────────────────────
+@app.route("/api/tickets", methods=["GET"])
+@require_auth
+def api_tickets_list():
+    unit_id = request.args.get("unit_id", "").strip()
+    estado  = request.args.get("estado",  "").strip()
+    cond, params = ["TRUE"], {}
+    if unit_id:
+        cond.append("unit_id = :unit_id"); params["unit_id"] = unit_id
+    if estado:
+        cond.append("estado  = :estado");  params["estado"]  = estado
+    with engine.connect() as conn:
+        df = pd.read_sql(
+            text(f"SELECT * FROM maintenance_ticket WHERE {' AND '.join(cond)} ORDER BY created_at DESC LIMIT 200"),
+            conn, params=params,
+        )
+    return _json(df.to_dict("records"))
+
+
+@app.route("/api/tickets", methods=["POST"])
+@require_auth
+def api_tickets_create():
+    body    = request.get_json(silent=True) or {}
+    unit_id = (body.get("unit_id") or "").strip()
+    if not unit_id:
+        return _json({"error": "unit_id requerido"}, 400)
+    run_id, _ = _latest_run()
+    with engine.begin() as conn:
+        row = conn.execute(text("""
+            INSERT INTO maintenance_ticket
+                (unit_id, vin, patente, empresa, run_id, estado, prioridad, descripcion, assigned_to, created_by)
+            VALUES (:unit_id,:vin,:patente,:empresa,:run_id,:estado,:prioridad,:descripcion,:assigned_to,:created_by)
+            RETURNING id
+        """), {
+            "unit_id":     unit_id,
+            "vin":         body.get("vin")         or None,
+            "patente":     body.get("patente")     or None,
+            "empresa":     body.get("empresa")     or None,
+            "run_id":      run_id,
+            "estado":      body.get("estado",      "pendiente"),
+            "prioridad":   body.get("prioridad",   "media"),
+            "descripcion": body.get("descripcion") or None,
+            "assigned_to": body.get("assigned_to") or None,
+            "created_by":  _get_token_email()      or None,
+        }).fetchone()
+    return _json({"id": int(row[0])}, 201)
+
+
+@app.route("/api/tickets/<int:ticket_id>", methods=["GET"])
+@require_auth
+def api_ticket_get(ticket_id):
+    with engine.connect() as conn:
+        t = pd.read_sql(
+            text("SELECT * FROM maintenance_ticket WHERE id = :id"),
+            conn, params={"id": ticket_id},
+        )
+        if t.empty:
+            return _json({"error": "No encontrado"}, 404)
+        notes = pd.read_sql(
+            text("SELECT * FROM maintenance_ticket_note WHERE ticket_id = :tid ORDER BY created_at"),
+            conn, params={"tid": ticket_id},
+        )
+    result          = t.to_dict("records")[0]
+    result["notes"] = notes.to_dict("records")
+    return _json(result)
+
+
+@app.route("/api/tickets/<int:ticket_id>", methods=["PATCH"])
+@require_auth
+def api_ticket_patch(ticket_id):
+    body    = request.get_json(silent=True) or {}
+    email   = _get_token_email()
+    allowed = {"estado", "prioridad", "descripcion", "assigned_to"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        return _json({"error": "Sin campos válidos"}, 400)
+    if updates.get("estado") == "completado" and TICKET_MANAGERS and email not in TICKET_MANAGERS:
+        return _json({"error": "Solo gestores pueden cerrar tickets"}, 403)
+    extras = ", updated_at = NOW()"
+    if updates.get("estado") == "completado":
+        extras += ", closed_at = NOW()"
+    set_sql = ", ".join(f"{k} = :{k}" for k in updates) + extras
+    with engine.begin() as conn:
+        conn.execute(text(f"UPDATE maintenance_ticket SET {set_sql} WHERE id = :id"),
+                     {**updates, "id": ticket_id})
+    return _json({"ok": True})
+
+
+@app.route("/api/tickets/<int:ticket_id>/notes", methods=["POST"])
+@require_auth
+def api_ticket_note_create(ticket_id):
+    body      = request.get_json(silent=True) or {}
+    note_body = (body.get("body") or "").strip()
+    if not note_body:
+        return _json({"error": "body requerido"}, 400)
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO maintenance_ticket_note (ticket_id, author, body)
+            VALUES (:tid, :author, :body)
+        """), {"tid": ticket_id, "author": _get_token_email() or None, "body": note_body})
+    return _json({"ok": True}, 201)
+
 
 # ── Dev server ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
