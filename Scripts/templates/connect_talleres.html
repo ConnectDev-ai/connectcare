@@ -2661,43 +2661,65 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <aside id="td-drawer"
        style="display:none;position:fixed;right:0;top:0;bottom:0;width:480px;max-width:100vw;
-              background:#10131a;border-left:1px solid rgba(69,72,79,0.3);z-index:1001;
-              overflow-y:auto;box-shadow:-16px 0 48px rgba(0,0,0,0.45)">
+              background:#161a21;border-left:1px solid rgba(53,53,52,0.4);z-index:1001;
+              overflow-y:auto;box-shadow:-16px 0 48px rgba(0,0,0,0.5)">
 
     <div style="display:flex;align-items:center;justify-content:space-between;
-                padding:16px 20px;border-bottom:1px solid rgba(69,72,79,0.2);
-                position:sticky;top:0;background:#10131a;z-index:2">
+                padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.4);
+                position:sticky;top:0;background:#161a21;z-index:2">
         <div style="display:flex;align-items:center;gap:8px">
-            <span class="icon" style="font-size:18px;color:#bd9dff">build_circle</span>
-            <span style="font-size:13px;font-weight:700;color:#ecedf6">Gestión de Unidad</span>
+            <span class="icon" style="font-size:18px;color:#f2be8c">build_circle</span>
+            <span style="font-size:13px;font-weight:700;color:#e5e2e1;letter-spacing:0.02em">Gestión de Unidad</span>
         </div>
         <button onclick="closeTicketDrawer()"
-                style="background:none;border:none;cursor:pointer;color:#a9abb3;
-                       display:flex;align-items:center;padding:4px;border-radius:6px"
-                onmouseenter="this.style.color='#ecedf6'" onmouseleave="this.style.color='#a9abb3'">
+                style="background:none;border:none;cursor:pointer;color:rgba(229,226,225,0.4);
+                       display:flex;align-items:center;padding:4px;border-radius:6px;transition:color 0.15s"
+                onmouseenter="this.style.color='#e5e2e1'" onmouseleave="this.style.color='rgba(229,226,225,0.4)'">
             <span class="icon">close</span>
         </button>
     </div>
 
-    <div id="td-unit"   style="padding:16px 20px;border-bottom:1px solid rgba(69,72,79,0.12)"></div>
-    <div id="td-ticket" style="padding:16px 20px;border-bottom:1px solid rgba(69,72,79,0.12)"></div>
+    <div id="td-unit"   style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
+    <div id="td-ticket" style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
     <div id="td-notes"  style="padding:16px 20px"></div>
 </aside>
 
 <script>
 // ═══ Gestión de Tickets ══════════════════════════════════════════
-let _tdActiveTicket = null;
-let _tdCurrentUnit  = null;
+let _tdActiveTicket  = null;
+let _tdCurrentUnit   = null;
+window._tdTalleres   = null;
 
-function openTicketDrawer(idx) {
+async function _ensureTdTalleres() {
+    if (window._tdTalleres) return;
+    try {
+        const r = await authFetch('/api/talleres');
+        window._tdTalleres = await r.json();
+    } catch(_) { window._tdTalleres = []; }
+}
+
+function _tdTallerSelect(id, pais, preselected) {
+    const all      = window._tdTalleres || [];
+    const inCountry = all.filter(t => t.pais === pais);
+    const list      = inCountry.length > 0 ? inCountry : all;
+    const opts = list.map(t => {
+        const lbl = t.zona ? `${t.taller_nombre} — ${t.zona}` : t.taller_nombre;
+        const sel = t.taller_nombre === preselected ? ' selected' : '';
+        return `<option value="${escHtml(t.taller_nombre)}"${sel}>${escHtml(lbl)}</option>`;
+    }).join('');
+    return `<select id="${id}"><option value="">— Sin asignar —</option>${opts}</select>`;
+}
+
+async function openTicketDrawer(idx) {
     _tdCurrentUnit = (window._efRenderedRows || [])[idx];
     if (!_tdCurrentUnit) return;
     document.getElementById('td-backdrop').style.display = 'block';
     document.getElementById('td-drawer').style.display   = 'block';
     document.body.style.overflow = 'hidden';
     _renderTdUnit(_tdCurrentUnit);
-    document.getElementById('td-ticket').innerHTML = '<div style="color:#a9abb3;font-size:12px;padding:4px 0">Cargando…</div>';
+    document.getElementById('td-ticket').innerHTML = '<div style="color:rgba(229,226,225,0.4);font-size:12px;padding:4px 0">Cargando…</div>';
     document.getElementById('td-notes').innerHTML  = '';
+    await _ensureTdTalleres();
     _loadTdTickets(_tdCurrentUnit.unit_id);
 }
 
@@ -2713,20 +2735,20 @@ function _tdBadge(label, bg, color, border) {
     return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;background:${bg};color:${color};border:1px solid ${border}">${label}</span>`;
 }
 const _TD_EF = {
-    CRITICO:   () => _tdBadge('Crítico',   'rgba(239,68,68,0.12)',  '#f87171', 'rgba(239,68,68,0.3)'),
-    ATENCION:  () => _tdBadge('Atención',  'rgba(251,191,36,0.12)', '#fbbf24', 'rgba(251,191,36,0.3)'),
-    OK:        () => _tdBadge('OK',        'rgba(74,222,128,0.12)', '#4ade80', 'rgba(74,222,128,0.3)'),
-    SIN_DATOS: () => _tdBadge('Sin datos', 'rgba(69,72,79,0.25)',   'rgba(229,226,225,0.35)', 'rgba(69,72,79,0.3)'),
+    CRITICO:   () => _tdBadge('Crítico',   'rgba(239,68,68,0.15)',  '#f87171', 'rgba(239,68,68,0.35)'),
+    ATENCION:  () => _tdBadge('Atención',  'rgba(251,191,36,0.15)', '#fbbf24', 'rgba(251,191,36,0.35)'),
+    OK:        () => _tdBadge('OK',        'rgba(74,222,128,0.15)', '#4ade80', 'rgba(74,222,128,0.35)'),
+    SIN_DATOS: () => _tdBadge('Sin datos', 'rgba(53,53,52,0.4)',    'rgba(229,226,225,0.3)', 'rgba(53,53,52,0.5)'),
 };
 const _TD_TK = {
-    pendiente:  () => _tdBadge('Pendiente',  'rgba(251,191,36,0.12)', '#fbbf24', 'rgba(251,191,36,0.3)'),
-    en_proceso: () => _tdBadge('En proceso', 'rgba(52,181,250,0.12)', '#34b5fa', 'rgba(52,181,250,0.3)'),
-    completado: () => _tdBadge('Completado', 'rgba(74,222,128,0.12)', '#4ade80', 'rgba(74,222,128,0.3)'),
+    pendiente:  () => _tdBadge('Pendiente',  'rgba(242,190,140,0.15)', '#f2be8c', 'rgba(242,190,140,0.35)'),
+    en_proceso: () => _tdBadge('En proceso', 'rgba(52,181,250,0.15)',  '#34b5fa', 'rgba(52,181,250,0.35)'),
+    completado: () => _tdBadge('Completado', 'rgba(74,222,128,0.15)',  '#4ade80', 'rgba(74,222,128,0.35)'),
 };
 const _TD_PR = {
-    alta:  () => _tdBadge('Alta',  'rgba(239,68,68,0.12)',  '#f87171', 'rgba(239,68,68,0.3)'),
-    media: () => _tdBadge('Media', 'rgba(251,191,36,0.12)', '#fbbf24', 'rgba(251,191,36,0.3)'),
-    baja:  () => _tdBadge('Baja',  'rgba(74,222,128,0.12)', '#4ade80', 'rgba(74,222,128,0.3)'),
+    alta:  () => _tdBadge('Alta',  'rgba(239,68,68,0.15)',  '#f87171', 'rgba(239,68,68,0.35)'),
+    media: () => _tdBadge('Media', 'rgba(242,190,140,0.15)','#f2be8c', 'rgba(242,190,140,0.35)'),
+    baja:  () => _tdBadge('Baja',  'rgba(74,222,128,0.15)', '#4ade80', 'rgba(74,222,128,0.35)'),
 };
 const _TD_FLAG = {'Chile':'🇨🇱','Colombia':'🇨🇴','Peru':'🇵🇪','Paraguay':'🇵🇾'};
 
@@ -2736,36 +2758,41 @@ function _renderTdUnit(r) {
     const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h'  : '—';
     const efBadge = (_TD_EF[r.estado] || _TD_EF.SIN_DATOS)();
     document.getElementById('td-unit').innerHTML = `
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
             <div>
-                <div style="font-size:20px;font-weight:700;color:#ecedf6;font-family:'Space Grotesk',sans-serif">
+                <div style="font-size:22px;font-weight:700;color:#e5e2e1;font-family:'Space Grotesk',sans-serif;letter-spacing:0.01em">
                     ${escHtml(r.patente || r.unit_id || '—')}
                 </div>
-                <div style="font-size:11px;color:#a9abb3;margin-top:3px">${flag} ${escHtml(r.pais||'')} · ${escHtml(r.empresa||'—')}</div>
-                ${r.vin ? `<div style="font-size:10px;color:#a9abb3;font-family:monospace;margin-top:1px">${escHtml(r.vin)}</div>` : ''}
+                <div style="font-size:11px;color:rgba(229,226,225,0.5);margin-top:3px">
+                    ${flag} ${escHtml(r.pais||'')} · ${escHtml(r.empresa||'—')}
+                </div>
+                ${r.vin ? `<div style="font-size:10px;color:rgba(229,226,225,0.35);font-family:monospace;margin-top:2px">${escHtml(r.vin)}</div>` : ''}
+                ${r.modelo ? `<div style="font-size:11px;color:rgba(229,226,225,0.45);margin-top:2px">${escHtml(r.modelo)}</div>` : ''}
             </div>
             ${efBadge}
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <div style="background:#161a21;border-radius:8px;padding:8px 12px;border:1px solid rgba(69,72,79,0.15)">
-                <div style="font-size:9px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:3px">Odómetro</div>
-                <div style="font-size:15px;font-weight:600;color:#ecedf6;font-family:monospace">${odo}</div>
-            </div>
-            <div style="background:#161a21;border-radius:8px;padding:8px 12px;border:1px solid rgba(69,72,79,0.15)">
-                <div style="font-size:9px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:3px">Horómetro</div>
-                <div style="font-size:15px;font-weight:600;color:#ecedf6;font-family:monospace">${hora}</div>
+        <div class="section-card" style="padding:12px 16px;margin-bottom:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div>
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Odómetro</div>
+                    <div style="font-size:16px;font-weight:700;color:#e5e2e1;font-family:monospace">${odo}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Horómetro</div>
+                    <div style="font-size:16px;font-weight:700;color:#e5e2e1;font-family:monospace">${hora}</div>
+                </div>
             </div>
         </div>
         ${r.fallas_count > 0 ? `
-        <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:8px;
-                    padding:8px 12px;display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span class="icon" style="color:#f87171;font-size:16px">warning</span>
+        <div class="section-card" style="padding:10px 14px;display:flex;align-items:center;gap:10px;
+                    background:rgba(239,68,68,0.05);border-color:rgba(239,68,68,0.2)">
+            <span class="icon" style="color:#f87171;font-size:18px">warning</span>
             <div>
-                <span style="font-size:11px;font-weight:600;color:#f87171">${r.fallas_count} falla${r.fallas_count>1?'s':''} DTC</span>
-                ${r.prioridad_falla === 'Urgente' ? '<span style="margin-left:6px;font-size:10px;padding:1px 7px;border-radius:4px;background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.3)">Urgente</span>' : ''}
+                <span style="font-size:12px;font-weight:600;color:#f87171">${r.fallas_count} falla${r.fallas_count>1?'s':''} DTC</span>
+                ${r.prioridad_falla === 'Urgente' ? `<span style="margin-left:8px;font-size:10px;padding:1px 7px;border-radius:4px;
+                    background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.3)">Urgente</span>` : ''}
             </div>
-        </div>` : ''}
-        ${r.modelo ? `<div style="margin-top:4px;font-size:11px;color:#a9abb3">${escHtml(r.modelo)}</div>` : ''}`;
+        </div>` : ''}`;
 }
 
 function _tdFmtDate(dt) {
@@ -2797,103 +2824,129 @@ async function _loadTdTickets(unit_id) {
 }
 
 function _renderTdTicket(ticket, closedCount) {
-    const el = document.getElementById('td-ticket');
+    const el   = document.getElementById('td-ticket');
+    const pais = _tdCurrentUnit ? (_tdCurrentUnit.pais || '') : '';
+    const nearestTaller = _tdCurrentUnit ? (_tdCurrentUnit.taller || '') : '';
     if (!ticket) {
         el.innerHTML = `
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-                <span style="font-size:11px;font-weight:700;color:#ecedf6;text-transform:uppercase;letter-spacing:0.08em">Orden de Trabajo</span>
-                <span style="font-size:11px;color:#a9abb3">Sin orden activa${closedCount ? ' · ' + closedCount + ' cerrada' + (closedCount > 1 ? 's' : '') : ''}</span>
+                <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">Orden de Trabajo</span>
+                ${closedCount ? `<span style="font-size:11px;color:rgba(229,226,225,0.4)">${closedCount} cerrada${closedCount>1?'s':''}</span>` : ''}
             </div>
-            <div style="background:#161a21;border-radius:10px;padding:14px;border:1px solid rgba(69,72,79,0.2)">
-                <div style="font-size:10px;font-weight:700;color:#bd9dff;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px">Nueva orden de trabajo</div>
-                <label style="font-size:10px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">Descripción</label>
+            <div class="section-card" style="padding:16px">
+                <div class="text-[10px] text-[#f2be8c] font-bold tracking-wider uppercase mb-3">Nueva orden de trabajo</div>
+
+                <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Descripción</label>
                 <textarea id="td-new-desc" rows="3" placeholder="Describe el trabajo a realizar…"
-                    style="width:100%;background:#0b0e14;border:1px solid rgba(69,72,79,0.35);border-radius:6px;
-                           padding:8px 10px;color:#ecedf6;font-size:12px;resize:vertical;outline:none;
-                           font-family:inherit;box-sizing:border-box"></textarea>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+                    style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                           padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                           resize:vertical;outline:none;box-sizing:border-box;margin-bottom:12px"></textarea>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
                     <div>
-                        <label style="font-size:10px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">Prioridad</label>
-                        <select id="td-new-prio"
-                            style="width:100%;background:#0b0e14;border:1px solid rgba(69,72,79,0.35);border-radius:6px;
-                                   padding:6px 10px;color:#ecedf6;font-size:12px;outline:none">
+                        <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Prioridad</label>
+                        <select id="td-new-prio">
                             <option value="alta">🔴 Alta</option>
                             <option value="media" selected>🟡 Media</option>
                             <option value="baja">🟢 Baja</option>
                         </select>
                     </div>
                     <div>
-                        <label style="font-size:10px;color:#a9abb3;text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">Asignar a</label>
-                        <input type="text" id="td-new-assign" placeholder="Nombre o taller"
-                            style="width:100%;background:#0b0e14;border:1px solid rgba(69,72,79,0.35);border-radius:6px;
-                                   padding:6px 10px;color:#ecedf6;font-size:12px;outline:none;box-sizing:border-box"/>
+                        <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado inicial</label>
+                        <select id="td-new-estado">
+                            <option value="pendiente">Pendiente</option>
+                            <option value="en_proceso">En proceso</option>
+                        </select>
                     </div>
                 </div>
+
+                <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Asignar a taller</label>
+                ${_tdTallerSelect('td-new-assign', pais, nearestTaller)}
+                ${nearestTaller ? `
+                <div style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(229,226,225,0.45)">
+                    <span class="icon" style="font-size:14px;color:#f2be8c">near_me</span>
+                    Más cercano según análisis: <strong style="color:#f2be8c">${escHtml(nearestTaller)}</strong>
+                </div>` : ''}
+
                 <button onclick="_tdCreateTicket()"
-                    style="margin-top:12px;width:100%;padding:8px;border-radius:8px;
-                           background:linear-gradient(135deg,#bd9dff,#34b5fa);color:#0b0e14;
-                           font-weight:700;font-size:12px;border:none;cursor:pointer;letter-spacing:0.04em">
-                    Crear orden de trabajo
+                    style="margin-top:16px;width:100%;padding:9px;border-radius:8px;
+                           background:linear-gradient(135deg,#f2be8c,#e5784e);color:#1c1b1b;
+                           font-weight:700;font-size:12px;border:none;cursor:pointer;letter-spacing:0.05em">
+                    <span class="icon" style="font-size:15px;vertical-align:middle;margin-right:4px">add_task</span>Crear orden de trabajo
                 </button>
             </div>`;
         return;
     }
+
     const tkBadge = (_TD_TK[ticket.estado] || _TD_TK.pendiente)();
     const prBadge = (_TD_PR[ticket.prioridad] || _TD_PR.media)();
     el.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
             <div>
-                <span style="font-size:11px;font-weight:700;color:#ecedf6;text-transform:uppercase;letter-spacing:0.08em">Orden #${ticket.id}</span>
-                <div style="font-size:10px;color:#a9abb3;margin-top:2px">Creada ${_tdFmtDate(ticket.created_at)}</div>
+                <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">Orden #${ticket.id}</span>
+                <div style="font-size:10px;color:rgba(229,226,225,0.4);margin-top:3px">Creada ${_tdFmtDate(ticket.created_at)}</div>
             </div>
             <div style="display:flex;gap:6px;align-items:center">${prBadge} ${tkBadge}</div>
         </div>
+
         ${ticket.descripcion ? `
-        <div style="background:#161a21;border-radius:8px;padding:10px 12px;margin-bottom:10px;
-                    border:1px solid rgba(69,72,79,0.15);font-size:12px;color:#ecedf6;line-height:1.5">
+        <div class="section-card" style="padding:10px 14px;margin-bottom:12px;font-size:13px;color:#e5e2e1;line-height:1.55">
             ${escHtml(ticket.descripcion)}
         </div>` : ''}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;font-size:11px">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;font-size:12px">
             <div>
-                <div style="color:#a9abb3;margin-bottom:2px">Asignado a</div>
-                <div style="color:#ecedf6;font-weight:500">${escHtml(ticket.assigned_to||'—')}</div>
+                <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Creado por</div>
+                <div style="color:#e5e2e1">${escHtml(ticket.created_by||'—')}</div>
             </div>
             <div>
-                <div style="color:#a9abb3;margin-bottom:2px">Creado por</div>
-                <div style="color:#ecedf6;font-weight:500">${escHtml(ticket.created_by||'—')}</div>
+                <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Actualizado</div>
+                <div style="color:#e5e2e1">${_tdFmtDate(ticket.updated_at)}</div>
             </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+
+        ${ticket.estado !== 'completado' ? `
+        <div style="margin-bottom:14px">
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Asignar a taller</label>
+            <div style="display:flex;gap:8px;align-items:center">
+                <div style="flex:1">${_tdTallerSelect('td-assign-inp', pais, ticket.assigned_to||nearestTaller)}</div>
+                <button onclick="_tdSaveAssign()"
+                    style="padding:8px 14px;border-radius:6px;background:rgba(242,190,140,0.1);
+                           color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:12px;font-weight:700;
+                           cursor:pointer;white-space:nowrap">
+                    Guardar
+                </button>
+            </div>
+            ${nearestTaller && nearestTaller !== ticket.assigned_to ? `
+            <div style="margin-top:5px;font-size:11px;color:rgba(229,226,225,0.4);display:flex;align-items:center;gap:5px">
+                <span class="icon" style="font-size:13px;color:#f2be8c">near_me</span>
+                Más cercano: <strong style="color:#f2be8c">${escHtml(nearestTaller)}</strong>
+            </div>` : ''}
+        </div>` : `
+        <div style="margin-bottom:14px;font-size:12px">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Asignado a</div>
+            <div style="color:#e5e2e1">${escHtml(ticket.assigned_to||'—')}</div>
+        </div>`}
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
             ${ticket.estado === 'pendiente' ? `
             <button onclick="_tdSetStatus('en_proceso')"
-                style="padding:6px 14px;border-radius:8px;background:rgba(52,181,250,0.1);color:#34b5fa;
-                       border:1px solid rgba(52,181,250,0.3);font-size:11px;font-weight:700;cursor:pointer">
-                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">play_arrow</span>Iniciar
+                style="padding:7px 16px;border-radius:8px;background:rgba(52,181,250,0.1);color:#34b5fa;
+                       border:1px solid rgba(52,181,250,0.3);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">play_arrow</span>Iniciar trabajo
             </button>` : ''}
             ${ticket.estado === 'en_proceso' ? `
             <button onclick="_tdSetStatus('completado')"
-                style="padding:6px 14px;border-radius:8px;background:rgba(74,222,128,0.1);color:#4ade80;
-                       border:1px solid rgba(74,222,128,0.3);font-size:11px;font-weight:700;cursor:pointer">
+                style="padding:7px 16px;border-radius:8px;background:rgba(74,222,128,0.1);color:#4ade80;
+                       border:1px solid rgba(74,222,128,0.3);font-size:12px;font-weight:700;cursor:pointer">
                 <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">check_circle</span>Completar
             </button>` : ''}
             ${ticket.estado === 'completado' ? `
             <button onclick="_tdSetStatus('pendiente')"
-                style="padding:6px 14px;border-radius:8px;background:rgba(69,72,79,0.15);color:#a9abb3;
-                       border:1px solid rgba(69,72,79,0.3);font-size:11px;font-weight:700;cursor:pointer">
+                style="padding:7px 16px;border-radius:8px;background:rgba(53,53,52,0.3);color:rgba(229,226,225,0.6);
+                       border:1px solid rgba(53,53,52,0.5);font-size:12px;font-weight:700;cursor:pointer">
                 <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">refresh</span>Reabrir
             </button>` : ''}
-            ${ticket.estado !== 'completado' ? `
-            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-                <input type="text" id="td-assign-inp" value="${escHtml(ticket.assigned_to||'')}"
-                    placeholder="Asignar a…"
-                    style="background:#161a21;border:1px solid rgba(69,72,79,0.3);border-radius:6px;
-                           padding:5px 9px;color:#ecedf6;font-size:11px;outline:none;width:130px"/>
-                <button onclick="_tdSaveAssign()"
-                    style="padding:5px 10px;border-radius:6px;background:rgba(189,157,255,0.1);
-                           color:#bd9dff;border:1px solid rgba(189,157,255,0.3);font-size:11px;font-weight:700;cursor:pointer">
-                    Asignar
-                </button>
-            </div>` : ''}
         </div>`;
 }
 
@@ -2935,6 +2988,7 @@ async function _tdCreateTicket() {
     const desc   = (document.getElementById('td-new-desc')?.value   || '').trim();
     const prio   = document.getElementById('td-new-prio')?.value    || 'media';
     const assign = (document.getElementById('td-new-assign')?.value || '').trim();
+    const estado = document.getElementById('td-new-estado')?.value  || 'pendiente';
     const btn    = document.querySelector('#td-ticket button');
     if (btn) { btn.disabled = true; btn.textContent = 'Creando…'; }
     try {
@@ -2947,6 +3001,7 @@ async function _tdCreateTicket() {
                 empresa:     _tdCurrentUnit.empresa || null,
                 descripcion: desc   || null,
                 prioridad:   prio,
+                estado:      estado,
                 assigned_to: assign || null,
             }),
         });

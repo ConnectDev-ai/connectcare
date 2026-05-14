@@ -940,6 +940,18 @@ def api_export(tipo: str):
     return send_file(buf, mimetype="text/csv",
                      as_attachment=True, download_name=fname)
 
+# ── Route: talleres (para el drawer de gestión) ───────────────────────────────
+@app.route("/api/talleres")
+@require_auth
+def api_talleres_list():
+    with engine.connect() as conn:
+        df = pd.read_sql(
+            text("SELECT taller_id, taller_nombre, zona, pais FROM dim_taller WHERE activo = TRUE ORDER BY pais, taller_nombre"),
+            conn,
+        )
+    return _json(df.fillna("").to_dict("records"))
+
+
 # ── Routes: gestión de tickets ────────────────────────────────────────────────
 @app.route("/api/tickets", methods=["GET"])
 @require_auth
