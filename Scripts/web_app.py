@@ -278,13 +278,29 @@ def require_auth(f):
     return decorated
 
 # ── JSON helpers ──────────────────────────────────────────────────────────────
+def _clean_nans(obj: Any) -> Any:
+    """Replace float('nan') with None recursively so json.dumps never emits NaN."""
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    if isinstance(obj, dict):
+        return {k: _clean_nans(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_nans(v) for v in obj]
+    return obj
+
 class _SafeEnc(json.JSONEncoder):
+    def encode(self, o: Any) -> str:
+        return super().encode(_clean_nans(o))
+
     def default(self, obj: Any) -> Any:
         if isinstance(obj, np.integer):  return int(obj)
         if isinstance(obj, np.floating): return None if math.isnan(float(obj)) else float(obj)
         if isinstance(obj, np.ndarray):  return obj.tolist()
         if isinstance(obj, pd.Timestamp): return obj.isoformat()
-        if pd.isna(obj): return None
+        try:
+            if pd.isna(obj): return None
+        except Exception:
+            pass
         return super().default(obj)
 
 def _json(data: Any, status: int = 200) -> Response:

@@ -1046,6 +1046,20 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                         </div>
                     </div>
 
+                    <!-- ── Tickets Abiertos ── -->
+                    <div class="section-card mb-4" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;justify-content:space-between">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span class="icon" style="font-size:16px;color:#f2be8c">assignment</span>
+                                <span style="font-size:12px;font-weight:700;color:#e5e2e1">Tickets Abiertos</span>
+                                <span style="font-size:11px;color:rgba(229,226,225,0.4)" id="tk-open-count"></span>
+                            </div>
+                        </div>
+                        <div id="tk-open-list">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+
                     <div class="section-card mb-4" style="padding:0;overflow-x:auto">
                         <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;justify-content:space-between">
                             <div style="display:flex;align-items:center;gap:8px">
@@ -1281,29 +1295,20 @@ function buildLayers(data) {
     const showPeru     = countryFilter === 'all' || countryFilter === 'peru';
     const showParaguay = countryFilter === 'all' || countryFilter === 'paraguay';
 
-    const unitsChile    = showChile    ? byCountry.chile    : [];
-    const unitsColombia = showColombia ? byCountry.colombia : [];
-    const unitsPeru     = showPeru     ? byCountry.peru     : [];
-    const unitsParaguay = showParaguay ? byCountry.paraguay : [];
-    const unitsOutlier  = [...unitsColombia, ...unitsPeru, ...unitsParaguay];
+    const unitsVisible = [
+        ...(showChile    ? byCountry.chile    : []),
+        ...(showColombia ? byCountry.colombia : []),
+        ...(showPeru     ? byCountry.peru     : []),
+        ...(showParaguay ? byCountry.paraguay : []),
+    ];
 
     layers.push(new deck.HexagonLayer({
-        id: 'hex-density', data: unitsChile,
+        id: 'hex-density', data: unitsVisible,
         getPosition: d => [d.lon, d.lat],
-        radius: hexRadius, elevationScale: 25, elevationRange: [0, 2500],
+        radius: hexRadius, elevationScale: 6, elevationRange: [0, 2500],
         extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
-        colorRange: HEX_COLORS,
+        colorRange: HEX_COLORS, colorDomain: [0, 3], elevationDomain: [0, 3],
     }));
-
-    if (unitsOutlier.length > 0) {
-        layers.push(new deck.HexagonLayer({
-            id: 'hex-density-outlier', data: unitsOutlier,
-            getPosition: d => [d.lon, d.lat],
-            radius: hexRadius, elevationScale: 6, elevationRange: [0, 2500],
-            extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
-            colorRange: HEX_COLORS, colorDomain: [0, 3], elevationDomain: [0, 3],
-        }));
-    }
 
     if (layerState.coverage) {
         layers.push(new deck.ScatterplotLayer({
@@ -3170,18 +3175,86 @@ async function loadTicketKpis() {
     ['tk-abiertos','tk-vencidos','tk-en-proceso','tk-completados'].forEach(id => {
         const el = document.getElementById(id); if (el) el.textContent = '—';
     });
-    const byEl = document.getElementById('tk-by-assignee');
-    const ovEl = document.getElementById('tk-overdue-list');
-    if (byEl) byEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
-    if (ovEl) ovEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    const byEl   = document.getElementById('tk-by-assignee');
+    const ovEl   = document.getElementById('tk-overdue-list');
+    const openEl = document.getElementById('tk-open-list');
+    if (byEl)   byEl.innerHTML   = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    if (ovEl)   ovEl.innerHTML   = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    if (openEl) openEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
     try {
-        const r    = await authFetch('/api/tickets/kpis');
-        const data = await r.json();
+        const [rKpi, rList] = await Promise.all([
+            authFetch('/api/tickets/kpis'),
+            authFetch('/api/tickets'),
+        ]);
+        const [data, allTickets] = await Promise.all([rKpi.json(), rList.json()]);
         if (data.error) throw new Error(data.error);
         renderTicketKpis(data);
+        renderOpenTickets(Array.isArray(allTickets) ? allTickets : []);
     } catch(e) {
-        if (byEl) byEl.innerHTML = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
+        if (byEl)   byEl.innerHTML   = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
+        if (openEl) openEl.innerHTML = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
     }
+}
+
+function renderOpenTickets(all) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const open = all.filter(t => !TERMINAL.has(t.estado))
+                    .sort((a, b) => {
+                        const pOrd = {alta:0,media:1,baja:2};
+                        const pa = pOrd[a.prioridad] ?? 1, pb = pOrd[b.prioridad] ?? 1;
+                        if (pa !== pb) return pa - pb;
+                        return new Date(a.created_at) - new Date(b.created_at);
+                    });
+    const el    = document.getElementById('tk-open-list');
+    const cntEl = document.getElementById('tk-open-count');
+    if (cntEl) cntEl.textContent = open.length > 0 ? `(${open.length})` : '';
+    if (!el) return;
+    if (open.length === 0) {
+        el.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets abiertos ✓</div>';
+        return;
+    }
+    const PR_COLOR = {alta:'#f87171', media:'#f2be8c', baja:'#4ade80'};
+    const ST_COLOR = {pendiente:'#f2be8c', en_proceso:'#34b5fa', vencido:'#f87171'};
+    el.innerHTML = `<table class="data-table">
+        <thead><tr>
+            <th>#</th><th>Patente</th><th>Empresa</th>
+            <th>Estado</th><th>Prioridad</th><th>Asignado a</th><th>Días háb.</th><th>Descripción</th>
+        </tr></thead>
+        <tbody>${open.map(t => {
+            const stLabel = t.es_vencido ? 'Vencido' : (t.estado === 'en_proceso' ? 'En proceso' : 'Pendiente');
+            const stKey   = t.es_vencido ? 'vencido' : t.estado;
+            const stColor = ST_COLOR[stKey] || '#e5e2e1';
+            const prColor = PR_COLOR[t.prioridad] || '#e5e2e1';
+            const dias    = _businessDaysSince(t.created_at);
+            const desc    = (t.descripcion || '').substring(0, 60) + ((t.descripcion||'').length > 60 ? '…' : '');
+            return `<tr>
+                <td><span style="font-family:monospace;color:#f2be8c">#${t.id}</span></td>
+                <td style="font-weight:600">${escHtml(t.patente || t.unit_id || '—')}</td>
+                <td>${escHtml(t.empresa || '—')}</td>
+                <td><span style="font-size:10px;font-weight:700;color:${stColor}">${escHtml(stLabel)}</span></td>
+                <td><span style="font-size:10px;font-weight:700;color:${prColor}">${escHtml(t.prioridad || '—')}</span></td>
+                <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${escHtml(t.assigned_to || 'Sin asignar')}</td>
+                <td><span style="${dias > 5 ? 'color:#f87171;font-weight:700' : ''}">${dias}</span></td>
+                <td style="font-size:11px;color:rgba(229,226,225,0.55);max-width:200px;overflow:hidden;text-overflow:ellipsis">${escHtml(desc || '—')}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table>`;
+}
+
+function _businessDaysSince(dateStr) {
+    if (!dateStr) return 0;
+    try {
+        const start = new Date(dateStr);
+        const now   = new Date();
+        let count = 0, d = new Date(start);
+        d.setHours(0,0,0,0);
+        const today = new Date(now); today.setHours(0,0,0,0);
+        while (d < today) {
+            d.setDate(d.getDate() + 1);
+            if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+        }
+        return count;
+    } catch(_) { return 0; }
 }
 
 function renderTicketKpis(data) {
