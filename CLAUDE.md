@@ -73,6 +73,8 @@ There is no test suite. This is a data pipeline + API project with no automated 
 | `SUPABASE_URL` | Supabase project URL for JWT validation via `/auth/v1/user` |
 | `SUPABASE_ANON_KEY` | Supabase anon key sent as `apikey` header during token validation |
 | `SUPABASE_JWT_SECRET` | Last-resort local HS256 JWT verification (fallback only) |
+| `TICKET_MANAGERS` | Comma-separated emails allowed to manage tickets (used by frontend role checks) |
+| `TICKET_SLA_DAYS` | SLA in business days before a ticket is flagged as overdue (default `5`) |
 
 **DB URL coercion**: Both `app.py` and `web_app.py` normalize any `postgres://` or `postgresql+pg8000://` prefix to `postgresql+psycopg://` automatically. Always use the `psycopg` driver.
 
@@ -100,16 +102,23 @@ Geotab is an optional second vehicle source — credentials checked at startup; 
 - **`Scripts/web_app.py`** — Flask API. Reads only from DB (never calls Copiloto). All routes resolve the latest snapshot via `_latest_run()` before querying. Serves `connect_talleres.html` at `/`.
 - **`Scripts/viewer_hex.py`** — Primary Streamlit UI ("Fleet Intelligence"). Dark theme, pydeck hexagon layers, Material Symbols icons. Connects to the DB via SQLAlchemy directly — it does **not** go through the Flask API.
 - **`Scripts/templates/connect_talleres.html`** — Standalone SPA with no build step. Uses MapLibre GL + deck.gl + Chart.js + Tailwind CSS (all CDN). Consumes the same `/api/*` endpoints.
+- **`api/index.py`** — One-file Vercel shim: inserts `Scripts/` into `sys.path` and re-exports the Flask `app` object as a serverless function.
 
 ### Database Schema
 
-The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created on first `app.py` run via `run_migrations()`. Four tables per pipeline run:
+The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created on first `app.py` run via `run_migrations()`. Four snapshot tables per pipeline run:
 
 - `snapshot_run` — run metadata (run_id, timestamp, unit count, config params)
 - `snapshot_unit` — one row per vehicle per run (VIN, coords, empresa, taller assignment, OBD odometer/horometer)
 - `snapshot_taller_overlap` — count of all units within radius per taller
 - `snapshot_taller_exclusive` — nearest-taller assignment counts only
 - `dim_taller` — static workshop dimension (coordinates, zone, PostGIS geometry) — upserted on every run
+
+Three maintenance tables created by `_ensure_ticket_tables()` at `web_app.py` startup (idempotent):
+
+- `maintenance_ticket` — one row per ticket (`unit_id`, `estado`, `prioridad`, `assigned_to`, `created_by`, timestamps)
+- `maintenance_ticket_note` — freeform notes per ticket; FK to `maintenance_ticket`
+- `maintenance_record` — closed-loop record of actual work done; optionally linked to a ticket
 
 **Production DB**: Neon. `PGHOST`, `PGDATABASE`, `PGUSER` are hardcoded in `.github/workflows/daily_pipeline.yml`; only `PGPASSWORD` is a secret.
 
@@ -125,6 +134,12 @@ The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created 
 | `GET /api/radio-search` | Ad-hoc radius search: `?lat=&lon=&radius_km=` — vectorized Haversine, no PostGIS |
 | `GET /api/estado-flota` | Maintenance state from OBD odometer vs brand thresholds, merged with DTC faults |
 | `GET /api/export/<tipo>` | Full CSV download: `tipo` must be `units`, `detalle`, or `cobertura` — use instead of `/api/detalle` for complete data |
+| `GET /api/talleres` | List of all active talleres from `dim_taller` |
+| `GET/POST /api/tickets` | List tickets (supports `?unit_id=`, `?estado=vencido`); create a new ticket |
+| `GET/PATCH /api/tickets/<id>` | Get or update a single ticket |
+| `POST /api/tickets/<id>/notes` | Add a note to a ticket |
+| `GET /api/tickets/kpis` | Aggregate ticket KPIs (counts by estado, vencidos) |
+| `GET/POST /api/maintenance-records` | List or create maintenance completion records |
 
 All routes require `Authorization: Bearer <supabase_token>` in production. Rate limit: 300 req/hour globally, 10/min on `/api/export`.
 
@@ -138,7 +153,11 @@ All routes require `Authorization: Bearer <supabase_token>` in production. Rate 
 
 **Coordinate swap guard**: `_fix_coords()` in `web_app.py` detects swapped lat/lon on taller records specifically — called inside `_clean_talleres()`, not `_clean_units()`. Swaps are detected by checking if the coordinates fall outside the Chilean bounding box (`lat ∈ [-56, -17]`, `lon ∈ [-76, -66]`) but would be valid if swapped.
 
+**Country detection**: `_pais_from_coords(lat, lon)` in `web_app.py` maps coordinates to country using latitude thresholds: `lat > 0` → Colombia, `lat ≤ -17` → Chile, otherwise Peru/Paraguay split at `lon = -62`. Used in `/api/ejecutivo`, `/api/estado-flota`, and `/api/export`.
+
 **Maintenance thresholds**: `_UMBRALES_KM` in `web_app.py` maps truck brands to service interval km. Detection is by substring match against the `modelo` field. The full dict covers FREIGHTLINER, KENWORTH, PETERBILT, SCANIA, VOLVO, MERCEDES, MAN, DAF, IVECO, FORD, TOYOTA, KOMATSU, CATERPILLAR, and BOMAG; default is 20,000 km for unknown brands.
+
+**Ticket SLA**: A ticket is considered `vencido` (overdue) when `_business_days_since(created_at) > TICKET_SLA_DAYS` and its `estado` is not in `{completado, cerrado, cancelado}`. Business days are Mon–Fri only.
 
 **DTC fault data**: `web_app.py` loads the most recent `Data/reporte_fallas_*.xlsx` at module startup into `_FALLAS_BY_VIN` (keyed by VIN). Required columns: `vin`, `affected_parameter`, `PRIORIDAD`. Only the lexicographically last file is loaded. **Requires a server restart to pick up a new file.**
 
