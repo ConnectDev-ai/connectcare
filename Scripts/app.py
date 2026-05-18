@@ -454,7 +454,7 @@ def units_from_vehicle_records(df_raw: pd.DataFrame, snap_ts_utc: str) -> pd.Dat
     df_raw = df_raw.rename(columns=rename_map)
 
     if "source" in df_raw.columns:
-        df_raw = df_raw[df_raw["source"].astype(str).str.upper() == "COPILOTO"].copy()
+        df_raw = df_raw[df_raw["source"].astype(str).str.upper().isin({"COPILOTO", "WICAR"})].copy()
 
     gps_dt = pd.to_datetime(df_raw["gps_timestamp"], errors="coerce", utc=True)
     df_raw = df_raw.assign(_gps_dt=gps_dt).dropna(subset=["_gps_dt"])
