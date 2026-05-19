@@ -1,0 +1,38 @@
+name: SAP Vehicle Cache Builder
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"   # lunes 6 AM UTC (3 AM Santiago)
+
+jobs:
+  build-cache:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pandas openpyxl requests python-dotenv
+
+      - name: Build SAP VIN cache
+        env:
+          ERP_SUBSCRIPTION_KEY: ${{ secrets.ERP_SUBSCRIPTION_KEY }}
+          MASTER_FLOTA_XLSX:    Data/master_Flota.xlsx
+          SAP_DELAY:            "0.3"
+          SAP_BATCH_LOG:        "50"
+        run: python Scripts/build_sap_cache.py
+
+      - name: Commit updated cache
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Data/sap_vin_cache.json
+          git diff --cached --quiet || git commit -m "chore(data): actualizar sap_vin_cache.json [skip ci]"
+          git push

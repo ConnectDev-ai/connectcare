@@ -152,40 +152,13 @@ def _fetch_sap_vehicle(vin: str, session: requests.Session) -> dict:
         return {}
 
 def enrich_units_with_sap(df_units: pd.DataFrame) -> pd.DataFrame:
-    """Enriquece unidades con datos exactos del ERP SAP de Kaufmann (con caché)."""
-    import time as _time
-
-    if not SAP_SUBSCRIPTION_KEY:
-        log.info("SAP ERP: ERP_SUBSCRIPTION_KEY no configurada — omitiendo.")
+    """Aplica el caché SAP al DataFrame. No llama a la API — usa build_sap_cache.py para eso."""
+    _load_sap_cache()
+    if not _SAP_CACHE:
+        log.info("SAP ERP: caché vacío — ejecuta build_sap_cache.py para generarlo.")
         return df_units
 
-    _load_sap_cache()
-
-    vin_col  = "vin" if "vin" in df_units.columns else "unit_id"
-    all_vins = (
-        df_units[vin_col].dropna().astype(str)
-        .str.strip().str.upper()
-        .unique().tolist()
-    )
-
-    def _valid_vin(v: str) -> bool:
-        return len(v) >= 8 and not v.isdigit() and v not in ("", "NAN", "NONE", "NAT")
-
-    to_fetch = [v for v in all_vins if _valid_vin(v) and v not in _SAP_CACHE]
-    cached   = sum(1 for v in all_vins if _valid_vin(v) and v in _SAP_CACHE)
-    log.info("SAP ERP: %s VINs en caché, %s a consultar", cached, len(to_fetch))
-
-    if to_fetch:
-        with requests.Session() as sap_session:
-            for i, vin in enumerate(to_fetch, 1):
-                _SAP_CACHE[vin] = _fetch_sap_vehicle(vin, sap_session)
-                if i % 50 == 0:
-                    log.info("SAP ERP: %s/%s consultados...", i, len(to_fetch))
-                    _save_sap_cache()
-                _time.sleep(0.3)
-        _save_sap_cache()
-
-    # Aplicar caché al DataFrame vectorizado
+    vin_col = "vin" if "vin" in df_units.columns else "unit_id"
     df = df_units.copy()
     for col in ["sap_serie", "sap_segmento", "sap_automotora", "sap_rut_cliente", "sap_baumuster"]:
         if col not in df.columns:
@@ -202,18 +175,14 @@ def enrich_units_with_sap(df_units: pd.DataFrame) -> pd.DataFrame:
     sap_marca   = vins.map(lambda v: (_SAP_CACHE.get(v) or {}).get("marca"))
     sap_patente = vins.map(lambda v: (_SAP_CACHE.get(v) or {}).get("patente"))
 
-    mask_modelo = sap_modelo.notna()
-    df.loc[mask_modelo, "modelo"] = sap_modelo[mask_modelo]
-
-    mask_marca = sap_marca.notna()
-    df.loc[mask_marca, "Marca"] = sap_marca[mask_marca]
+    df.loc[sap_modelo.notna(), "modelo"] = sap_modelo[sap_modelo.notna()]
+    df.loc[sap_marca.notna(),  "Marca"]  = sap_marca[sap_marca.notna()]
 
     patente_vacia = df.get("Patente", pd.Series("", index=df.index)).fillna("").astype(str).str.strip() == ""
-    mask_patente  = sap_patente.notna() & patente_vacia
-    df.loc[mask_patente, "Patente"] = sap_patente[mask_patente]
+    df.loc[sap_patente.notna() & patente_vacia, "Patente"] = sap_patente[sap_patente.notna() & patente_vacia]
 
     enriched = df["sap_automotora"].notna().sum()
-    log.info("SAP ERP: %s/%s unidades enriquecidas", enriched, len(df))
+    log.info("SAP ERP: caché aplicado — %s/%s unidades con datos SAP", enriched, len(df))
     return df
 
 # ── VIN decoder: WMI table + NHTSA fallback ──────────────────────────────────
@@ -1160,7 +1129,7 @@ def main():
     # Enriquecer con empresa del master
     df_units = enrich_units_with_master(df_units, df_master)
 
-    # Enriquecer con datos exactos del ERP SAP de Kaufmann
+    # Aplicar caché SAP si ya fue construido (build_sap_cache.py lo genera por separado)
     df_units = enrich_units_with_sap(df_units)
 
     # CSV snapshot units (ahora incluye Empresa, Marca, Modelo, Patente)
