@@ -89,6 +89,133 @@ _raw_dbs = os.getenv("GEOTAB_DATABASES", "") or os.getenv("GEOTAB_DATABASE", "")
 GEOTAB_DATABASES: list[str] = [d.strip() for d in _raw_dbs.split(",") if d.strip()]
 _GEOTAB_BATCH_SIZE = 50  # devices per ExecuteMultiCall (2 calls each → 100 total)
 
+# =========================
+# SAP ERP — Kaufmann
+# =========================
+SAP_API_URL          = "https://apimaz.grupokaufmann.com/prd/erp/servicio/v1/mantenimiento/smart_contract_vinSet"
+SAP_SUBSCRIPTION_KEY = os.getenv("ERP_SUBSCRIPTION_KEY", "").strip()
+_SAP_CACHE_FILE      = Path(__file__).parent.parent / "Data" / "sap_vin_cache.json"
+_SAP_CACHE: dict[str, dict] = {}
+
+def _load_sap_cache() -> None:
+    global _SAP_CACHE
+    try:
+        if _SAP_CACHE_FILE.exists():
+            _SAP_CACHE = json.loads(_SAP_CACHE_FILE.read_text(encoding="utf-8"))
+            log.info("SAP cache cargado: %s entradas", len(_SAP_CACHE))
+    except Exception as exc:
+        log.warning("sap_vin_cache.json no se pudo cargar: %s", exc)
+        _SAP_CACHE = {}
+
+def _save_sap_cache() -> None:
+    try:
+        _SAP_CACHE_FILE.write_text(
+            json.dumps(_SAP_CACHE, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        log.info("SAP cache guardado: %s entradas", len(_SAP_CACHE))
+    except Exception as exc:
+        log.warning("sap_vin_cache.json no se pudo guardar: %s", exc)
+
+def _fetch_sap_vehicle(vin: str, session: requests.Session) -> dict:
+    """Consulta el ERP SAP por VIN. Retorna {} si no encontrado o error."""
+    try:
+        r = session.post(
+            SAP_API_URL,
+            json={"IPatente": "", "IVhvin": vin},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Ocp-Apim-Subscription-Key": SAP_SUBSCRIPTION_KEY,
+                "X-REQUESTED-WITH": "application/json",
+            },
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return {}
+        data = r.json().get("d", {})
+        if not data.get("EVhvin"):
+            return {}
+        def _s(k): return (data.get(k) or "").strip() or None
+        return {
+            "marca":       _s("Marca"),
+            "modelo":      _s("Modelo"),
+            "serie":       _s("Serie"),
+            "segmento":    _s("Segmento"),
+            "automotora":  _s("Automotora"),
+            "rut_cliente": _s("Rut_Cliente"),
+            "patente":     _s("EPatente"),
+            "baumuster":   _s("EBaumuster"),
+            "bukrs":       _s("EBukrs"),
+        }
+    except Exception as exc:
+        log.debug("SAP fetch error VIN %s: %s", vin, exc)
+        return {}
+
+def enrich_units_with_sap(df_units: pd.DataFrame) -> pd.DataFrame:
+    """Enriquece unidades con datos exactos del ERP SAP de Kaufmann (con caché)."""
+    import time as _time
+
+    if not SAP_SUBSCRIPTION_KEY:
+        log.info("SAP ERP: ERP_SUBSCRIPTION_KEY no configurada — omitiendo.")
+        return df_units
+
+    _load_sap_cache()
+
+    vin_col  = "vin" if "vin" in df_units.columns else "unit_id"
+    all_vins = (
+        df_units[vin_col].dropna().astype(str)
+        .str.strip().str.upper()
+        .unique().tolist()
+    )
+
+    def _valid_vin(v: str) -> bool:
+        return len(v) >= 8 and not v.isdigit() and v not in ("", "NAN", "NONE", "NAT")
+
+    to_fetch = [v for v in all_vins if _valid_vin(v) and v not in _SAP_CACHE]
+    cached   = sum(1 for v in all_vins if _valid_vin(v) and v in _SAP_CACHE)
+    log.info("SAP ERP: %s VINs en caché, %s a consultar", cached, len(to_fetch))
+
+    if to_fetch:
+        with requests.Session() as sap_session:
+            for i, vin in enumerate(to_fetch, 1):
+                _SAP_CACHE[vin] = _fetch_sap_vehicle(vin, sap_session)
+                if i % 50 == 0:
+                    log.info("SAP ERP: %s/%s consultados...", i, len(to_fetch))
+                    _save_sap_cache()
+                _time.sleep(0.3)
+        _save_sap_cache()
+
+    # Aplicar caché al DataFrame vectorizado
+    df = df_units.copy()
+    for col in ["sap_serie", "sap_segmento", "sap_automotora", "sap_rut_cliente", "sap_baumuster"]:
+        if col not in df.columns:
+            df[col] = None
+
+    vins = df[vin_col].astype(str).str.strip().str.upper()
+
+    for sap_key, col in [("serie","sap_serie"), ("segmento","sap_segmento"),
+                          ("automotora","sap_automotora"), ("rut_cliente","sap_rut_cliente"),
+                          ("baumuster","sap_baumuster")]:
+        df[col] = vins.map(lambda v, k=sap_key: (_SAP_CACHE.get(v) or {}).get(k))
+
+    sap_modelo  = vins.map(lambda v: (_SAP_CACHE.get(v) or {}).get("modelo"))
+    sap_marca   = vins.map(lambda v: (_SAP_CACHE.get(v) or {}).get("marca"))
+    sap_patente = vins.map(lambda v: (_SAP_CACHE.get(v) or {}).get("patente"))
+
+    mask_modelo = sap_modelo.notna()
+    df.loc[mask_modelo, "modelo"] = sap_modelo[mask_modelo]
+
+    mask_marca = sap_marca.notna()
+    df.loc[mask_marca, "Marca"] = sap_marca[mask_marca]
+
+    patente_vacia = df.get("Patente", pd.Series("", index=df.index)).fillna("").astype(str).str.strip() == ""
+    mask_patente  = sap_patente.notna() & patente_vacia
+    df.loc[mask_patente, "Patente"] = sap_patente[mask_patente]
+
+    enriched = df["sap_automotora"].notna().sum()
+    log.info("SAP ERP: %s/%s unidades enriquecidas", enriched, len(df))
+    return df
+
 # ── VIN decoder: WMI table + NHTSA fallback ──────────────────────────────────
 # WMI (first 3 chars of VIN) → brand name
 _WMI_BRANDS: dict[str, str] = {
@@ -565,12 +692,17 @@ def compute_coverage_exclusive(df_units, df_talleres, radius_km):
 def run_migrations(engine):
     """Aplica columnas nuevas si no existen. Seguro de ejecutar múltiples veces."""
     migrations = [
-        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odometer  DOUBLE PRECISION",
-        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_horometer DOUBLE PRECISION",
-        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odoliter  DOUBLE PRECISION",
-        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS has_can_data  BOOLEAN",
-        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS zona          TEXT",
-        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS pais          TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odometer   DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_horometer  DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS can_odoliter   DOUBLE PRECISION",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS has_can_data   BOOLEAN",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_serie      TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_segmento   TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_automotora TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_rut_cliente TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_baumuster  TEXT",
+        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS zona           TEXT",
+        "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS pais           TEXT",
     ]
     with engine.begin() as conn:
         for stmt in migrations:
@@ -630,7 +762,8 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
         df["patente"] = df["Patente"].where(df["Patente"].notna(), df.get("patente"))
     if "Modelo" in df.columns:
         df["modelo"] = df["Modelo"].where(df["Modelo"].notna(), None)
-    for col in ["vin","imei","patente","empresa","vehicle_name","modelo","can_odometer","can_horometer","can_odoliter","has_can_data"]:
+    for col in ["vin","imei","patente","empresa","vehicle_name","modelo","can_odometer","can_horometer","can_odoliter","has_can_data",
+                "sap_serie","sap_segmento","sap_automotora","sap_rut_cliente","sap_baumuster"]:
         if col not in df.columns: df[col] = None
     df["run_id"]          = run_id
     df["snapshot_ts_utc"] = pd.to_datetime(snap_ts, utc=True).to_pydatetime()
@@ -654,17 +787,24 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
             "can_horometer": None if pd.isna(r.get("can_horometer")) else float(r["can_horometer"]),
             "can_odoliter": None if pd.isna(r.get("can_odoliter")) else float(r["can_odoliter"]),
             "has_can_data": None if r.get("has_can_data") is None else bool(r["has_can_data"]),
+            "sap_serie":       s("sap_serie"),
+            "sap_segmento":    s("sap_segmento"),
+            "sap_automotora":  s("sap_automotora"),
+            "sap_rut_cliente": s("sap_rut_cliente"),
+            "sap_baumuster":   s("sap_baumuster"),
         })
     sql = text("""
         INSERT INTO snapshot_unit (run_id,snapshot_ts_utc,snapshot_date,unit_id,vin,imei,patente,
             empresa,vehicle_name,modelo,lat,lon,geom,taller_cercano_id,taller_cercano_nombre,
             distancia_taller_cercano_km,dentro_radio_taller,radio_taller_km,
-            can_odometer,can_horometer,can_odoliter,has_can_data)
+            can_odometer,can_horometer,can_odoliter,has_can_data,
+            sap_serie,sap_segmento,sap_automotora,sap_rut_cliente,sap_baumuster)
         VALUES (:run_id,:snapshot_ts_utc,:snapshot_date,:unit_id,:vin,:imei,:patente,
             :empresa,:vehicle_name,:modelo,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),
             :taller_cercano_id,:taller_cercano_nombre,:distancia_taller_cercano_km,
             :dentro_radio_taller,:radio_taller_km,
-            :can_odometer,:can_horometer,:can_odoliter,:has_can_data)
+            :can_odometer,:can_horometer,:can_odoliter,:has_can_data,
+            :sap_serie,:sap_segmento,:sap_automotora,:sap_rut_cliente,:sap_baumuster)
         ON CONFLICT (run_id,unit_id) DO UPDATE SET
             empresa=EXCLUDED.empresa,vehicle_name=EXCLUDED.vehicle_name,modelo=EXCLUDED.modelo,
             taller_cercano_id=EXCLUDED.taller_cercano_id,
@@ -672,7 +812,10 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
             distancia_taller_cercano_km=EXCLUDED.distancia_taller_cercano_km,
             dentro_radio_taller=EXCLUDED.dentro_radio_taller,
             can_odometer=EXCLUDED.can_odometer,can_horometer=EXCLUDED.can_horometer,
-            can_odoliter=EXCLUDED.can_odoliter,has_can_data=EXCLUDED.has_can_data;
+            can_odoliter=EXCLUDED.can_odoliter,has_can_data=EXCLUDED.has_can_data,
+            sap_serie=EXCLUDED.sap_serie,sap_segmento=EXCLUDED.sap_segmento,
+            sap_automotora=EXCLUDED.sap_automotora,sap_rut_cliente=EXCLUDED.sap_rut_cliente,
+            sap_baumuster=EXCLUDED.sap_baumuster;
     """)
     with engine.begin() as conn:
         conn.execute(sql, records)
@@ -1016,6 +1159,9 @@ def main():
 
     # Enriquecer con empresa del master
     df_units = enrich_units_with_master(df_units, df_master)
+
+    # Enriquecer con datos exactos del ERP SAP de Kaufmann
+    df_units = enrich_units_with_sap(df_units)
 
     # CSV snapshot units (ahora incluye Empresa, Marca, Modelo, Patente)
     snap_units_path = OUT_DIR / f"snapshot_units_{snap_tag}.csv"

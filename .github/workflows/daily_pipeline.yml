@@ -45,6 +45,8 @@ jobs:
           GEOTAB_USERNAME: ${{ secrets.GEOTAB_USERNAME }}
           GEOTAB_PASSWORD: ${{ secrets.GEOTAB_PASSWORD }}
 
+          ERP_SUBSCRIPTION_KEY: ${{ secrets.ERP_SUBSCRIPTION_KEY }}
+
           TALLERES_XLSX:     Data/talleres.xlsx
           MASTER_FLOTA_XLSX: Data/master_Flota.xlsx
           RADIUS_KM:        "100"
