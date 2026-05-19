@@ -138,6 +138,10 @@ body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; 
 .data-table tbody td { padding: 9px 14px; border-bottom: 1px solid rgba(53,53,52,0.25);
                         color: rgba(229,226,225,0.8); white-space: nowrap; }
 
+/* ── Scrollable table wrappers ── */
+.scrollable-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 380px; }
+.scrollable-table-wrap .data-table thead th { position: sticky; top: 0; z-index: 1; background: #0e0e0e; }
+
 /* ── Form controls ── */
 select, input[type="text"], input[type="search"] {
     background: #201f1f !important; border: 1px solid rgba(53,53,52,0.6) !important;
@@ -759,10 +763,30 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                     </div>
                     <!-- Table -->
                     <div class="section-card mb-6">
-                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
-                            Resumen por taller
+                        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                            <div class="serif text-[#f2be8c] font-bold text-base">
+                                Resumen por taller
+                            </div>
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">País</span>
+                                    <select id="ej-filter-pais"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderEjTable()">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Zona</span>
+                                    <select id="ej-filter-zona"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderEjTable()">
+                                        <option value="__all__">Todas</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                        <div id="ej-table" class="overflow-x-auto"></div>
+                        <div id="ej-table" class="scrollable-table-wrap"></div>
                     </div>
 
                     <!-- ── Modelos por sucursal ── -->
@@ -800,7 +824,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                         <div class="serif text-[#f2be8c] font-bold text-base mb-4">
                             Tabla modelos × taller
                         </div>
-                        <div id="mod-suc-table" class="overflow-x-auto"></div>
+                        <div id="mod-suc-table" class="scrollable-table-wrap"></div>
                     </div>
                 </div>
             </div>
@@ -1695,6 +1719,7 @@ function downloadSearchCSV() {
 //  VISTA EJECUTIVA
 // ═══════════════════════════════════════════════════════
 let _ejCharts = {};
+let _ejResumenData = [];
 
 function loadEjecutivo() {
     authFetch('/api/ejecutivo')
@@ -1924,6 +1949,54 @@ function renderEjecutivo(data) {
     });
 
     // ── Table ──
+    _ejResumenData = [...resumen].sort((a, b) => b.unidades - a.unidades);
+
+    // Poblar filtro País
+    const selPais = document.getElementById('ej-filter-pais');
+    selPais.innerHTML = '<option value="__all__">Todos</option>';
+    [...new Set(resumen.map(r => r.pais).filter(Boolean))].sort().forEach(p => {
+        const opt = document.createElement('option'); opt.value = p; opt.textContent = p;
+        selPais.appendChild(opt);
+    });
+
+    // Poblar filtro Zona (todas las zonas inicialmente)
+    const selZona = document.getElementById('ej-filter-zona');
+    selZona.innerHTML = '<option value="__all__">Todas</option>';
+    [...new Set(resumen.map(r => r.zona).filter(Boolean))].sort().forEach(z => {
+        const opt = document.createElement('option'); opt.value = z; opt.textContent = z;
+        selZona.appendChild(opt);
+    });
+
+    renderEjTable();
+
+    // Cargar sección modelos por sucursal (independiente del resto)
+    try { loadModSucursal(); } catch(e) {
+        document.getElementById('mod-suc-loading').style.display = 'none';
+        document.getElementById('mod-suc-error').textContent = `Error: ${e.message}`;
+        document.getElementById('mod-suc-error').style.display = 'block';
+    }
+}
+
+function renderEjTable() {
+    if (!_ejResumenData.length) return;
+    const paisFiltro = document.getElementById('ej-filter-pais').value;
+    const zonaFiltro = document.getElementById('ej-filter-zona').value;
+
+    // Al cambiar país, actualizar opciones de zona disponibles
+    const selZona = document.getElementById('ej-filter-zona');
+    const prevZona = selZona.value;
+    const zonasDisp = [...new Set(
+        _ejResumenData
+            .filter(r => paisFiltro === '__all__' || r.pais === paisFiltro)
+            .map(r => r.zona).filter(Boolean)
+    )].sort();
+    selZona.innerHTML = '<option value="__all__">Todas</option>';
+    zonasDisp.forEach(z => {
+        const opt = document.createElement('option'); opt.value = z; opt.textContent = z;
+        if (z === prevZona) opt.selected = true;
+        selZona.appendChild(opt);
+    });
+
     const _EJ_FLAGS = { 'Chile':'🇨🇱', 'Colombia':'🇨🇴', 'Peru':'🇵🇪', 'Paraguay':'🇵🇾' };
     const cols = [
         { key: 'pais', label: 'País', fmt: v => `<span class="whitespace-nowrap">${_EJ_FLAGS[v]||''} ${escHtml(String(v||''))}</span>` },
@@ -1935,15 +2008,14 @@ function renderEjecutivo(data) {
         { key: 'dist_max',   label: 'Dist. max. (km)',  fmt: v => fmtDec(v) },
         { key: 'dist_min',   label: 'Dist. min. (km)',  fmt: v => fmtDec(v) },
     ];
-    document.getElementById('ej-table').innerHTML =
-        buildTable(cols, [...resumen].sort((a, b) => b.unidades - a.unidades), { raw: true });
 
-    // Cargar sección modelos por sucursal (independiente del resto)
-    try { loadModSucursal(); } catch(e) {
-        document.getElementById('mod-suc-loading').style.display = 'none';
-        document.getElementById('mod-suc-error').textContent = `Error: ${e.message}`;
-        document.getElementById('mod-suc-error').style.display = 'block';
-    }
+    const filtradas = _ejResumenData.filter(r => {
+        if (paisFiltro !== '__all__' && r.pais !== paisFiltro) return false;
+        if (zonaFiltro !== '__all__' && r.zona !== zonaFiltro) return false;
+        return true;
+    });
+
+    document.getElementById('ej-table').innerHTML = buildTable(cols, filtradas, { raw: true });
 }
 
 
