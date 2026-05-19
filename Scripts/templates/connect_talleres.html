@@ -806,11 +806,29 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Modelo</span>
-                                    <select id="mod-suc-filter-modelo"
-                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
-                                        onchange="renderModSucChart(); renderModSucTable();">
-                                        <option value="__all__">Todos</option>
-                                    </select>
+                                    <div class="relative" id="mod-modelo-wrap">
+                                        <button id="mod-modelo-btn" onclick="toggleModeloDropdown()"
+                                            class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 flex items-center gap-2 min-w-[110px] max-w-[180px]">
+                                            <span id="mod-modelo-label" class="truncate">Todos</span>
+                                            <span class="ml-auto text-[10px] opacity-40 flex-shrink-0">▾</span>
+                                        </button>
+                                        <div id="mod-modelo-dropdown"
+                                            style="display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:230px;z-index:50"
+                                            class="bg-[#201f1f] border border-[#50453b] rounded-md shadow-xl">
+                                            <div class="p-2">
+                                                <input id="mod-modelo-search" type="text" placeholder="Buscar modelo…"
+                                                    oninput="filterModeloOptions()"
+                                                    class="w-full bg-[#161515] border border-[#50453b] text-[#e5e2e1] text-[11px] rounded px-2 py-1 focus:outline-none focus:border-[#f2be8c]">
+                                            </div>
+                                            <div class="px-3 pb-1.5 flex gap-3">
+                                                <button onclick="selectAllModelos()" class="text-[10px] text-[#f2be8c] hover:underline">Todos</button>
+                                                <button onclick="clearModeloSearch()" class="text-[10px] text-[rgba(229,226,225,0.4)] hover:underline">Limpiar búsqueda</button>
+                                            </div>
+                                            <div id="mod-modelo-options"
+                                                class="overflow-y-auto border-t border-[rgba(53,53,52,0.4)]"
+                                                style="max-height:220px"></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2020,6 +2038,84 @@ function renderEjTable() {
 
 
 // ═══════════════════════════════════════════════════════
+//  MULTI-SELECT MODELO
+// ═══════════════════════════════════════════════════════
+let _selectedModelos = new Set(); // vacío = mostrar todos
+let _modModelosAll   = [];
+
+function toggleModeloDropdown() {
+    const dd = document.getElementById('mod-modelo-dropdown');
+    const opening = dd.style.display === 'none';
+    dd.style.display = opening ? 'block' : 'none';
+    if (opening) document.getElementById('mod-modelo-search').focus();
+}
+
+document.addEventListener('click', e => {
+    const wrap = document.getElementById('mod-modelo-wrap');
+    if (wrap && !wrap.contains(e.target))
+        document.getElementById('mod-modelo-dropdown').style.display = 'none';
+});
+
+function filterModeloOptions() {
+    const q = document.getElementById('mod-modelo-search').value.toLowerCase();
+    document.querySelectorAll('#mod-modelo-options .mod-opt').forEach(el => {
+        el.style.display = el.dataset.label.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function clearModeloSearch() {
+    document.getElementById('mod-modelo-search').value = '';
+    filterModeloOptions();
+}
+
+function toggleModelo(m) {
+    if (_selectedModelos.has(m)) _selectedModelos.delete(m);
+    else _selectedModelos.add(m);
+    _updateModeloLabel();
+    renderModSucChart();
+    renderModSucTable();
+}
+
+function selectAllModelos() {
+    _selectedModelos.clear();
+    document.querySelectorAll('#mod-modelo-options input[type=checkbox]').forEach(cb => cb.checked = false);
+    _updateModeloLabel();
+    renderModSucChart();
+    renderModSucTable();
+}
+
+function _updateModeloLabel() {
+    const lbl = document.getElementById('mod-modelo-label');
+    if (!lbl) return;
+    if (_selectedModelos.size === 0) { lbl.textContent = 'Todos'; return; }
+    if (_selectedModelos.size === 1) {
+        const [m] = _selectedModelos;
+        lbl.textContent = m.length > 16 ? m.slice(0, 14) + '…' : m;
+    } else {
+        lbl.textContent = `${_selectedModelos.size} modelos`;
+    }
+}
+
+function _populateModeloOptions(modelos) {
+    _modModelosAll = modelos;
+    _selectedModelos.clear();
+    const wrap = document.getElementById('mod-modelo-options');
+    if (!wrap) return;
+    wrap.innerHTML = modelos.map(m => `
+        <label class="mod-opt flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none"
+               style="transition:background 0.1s"
+               onmouseover="this.style.background='rgba(242,190,140,0.07)'"
+               onmouseout="this.style.background=''"
+               data-label="${escHtml(m)}">
+            <input type="checkbox" value="${escHtml(m)}" onchange="toggleModelo(this.value)"
+                   style="accent-color:#f2be8c;width:13px;height:13px;flex-shrink:0;cursor:pointer">
+            <span style="font-size:11px;color:rgba(229,226,225,0.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m)}</span>
+        </label>`).join('');
+    _updateModeloLabel();
+}
+
+
+// ═══════════════════════════════════════════════════════
 //  MODELOS POR SUCURSAL
 // ═══════════════════════════════════════════════════════
 let _modSucData   = null;
@@ -2057,14 +2153,8 @@ function loadModSucursal() {
                 sel.appendChild(opt);
             });
 
-            // Poblar filtro de modelo
-            const selMod = document.getElementById('mod-suc-filter-modelo');
-            selMod.innerHTML = '<option value="__all__">Todos</option>';
-            (data.modelos || []).forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m; opt.textContent = m;
-                selMod.appendChild(opt);
-            });
+            // Poblar dropdown multi-select de modelo
+            _populateModeloOptions(data.modelos || []);
 
             document.getElementById('mod-suc-chart-wrap').style.display = 'block';
             renderModSucChart();
@@ -2080,15 +2170,15 @@ function loadModSucursal() {
 
 function renderModSucChart() {
     if (!_modSucData) return;
-    const tallerFiltro  = document.getElementById('mod-suc-filter').value;
-    const modeloFiltro  = document.getElementById('mod-suc-filter-modelo').value;
+    const tallerFiltro = document.getElementById('mod-suc-filter').value;
+    const modeloSel    = _selectedModelos.size ? _selectedModelos : null;
     const { talleres, modelos, rows } = _modSucData;
 
     const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
 
-    // Filtrar modelos: por filtro de modelo y por tener unidades en talleres activos
+    // Filtrar modelos: por selección y por tener unidades en talleres activos
     const modFiltrados = modelos.filter(m => {
-        if (modeloFiltro !== '__all__' && m !== modeloFiltro) return false;
+        if (modeloSel && !modeloSel.has(m)) return false;
         const row = rows.find(r => r.modelo === m);
         return row && talleresActivos.some(t => (row[t] || 0) > 0);
     }).slice(0, 20);
@@ -2143,14 +2233,14 @@ function renderModSucChart() {
 function renderModSucTable() {
     if (!_modSucData) return;
     const tallerFiltro = document.getElementById('mod-suc-filter').value;
-    const modeloFiltro = document.getElementById('mod-suc-filter-modelo').value;
+    const modeloSel    = _selectedModelos.size ? _selectedModelos : null;
     const { talleres, rows } = _modSucData;
 
     const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
 
-    // Filtrar filas por modelo seleccionado
+    // Filtrar filas por selección de modelos
     const rowsFiltrados = rows.filter(r => {
-        if (modeloFiltro !== '__all__' && r.modelo !== modeloFiltro) return false;
+        if (modeloSel && !modeloSel.has(r.modelo)) return false;
         return talleresActivos.some(t => (r[t] || 0) > 0);
     });
 
