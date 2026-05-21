@@ -694,39 +694,42 @@ def api_modelos_sucursal():
     if df.empty:
         return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
 
-    talleres = sorted(df["taller"].unique().tolist())
+    def _str(v):
+        return None if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
 
-    # Metadatos por modelo: marca y segmento más frecuentes
-    def _first_valid(s):
-        v = s.dropna()
-        return v.iloc[0] if not v.empty else None
+    talleres = sorted(df["taller"].dropna().unique().tolist())
 
-    meta = df.groupby("modelo").agg(
-        total=("unidades", "sum"),
-        marca=("marca", _first_valid),
-        segmento=("segmento", _first_valid),
-    ).reset_index()
-    modelos = meta.sort_values("total", ascending=False)["modelo"].tolist()
+    # Metadatos por modelo: primera marca/segmento válida y total de unidades
+    meta_dict = {}
+    for mod, grp in df.groupby("modelo"):
+        marcas_v   = [x for x in grp["marca"].tolist()    if x is not None and str(x) != "nan" and str(x) != ""]
+        segmentos_v = [x for x in grp["segmento"].tolist() if x is not None and str(x) != "nan" and str(x) != ""]
+        meta_dict[mod] = {
+            "total":    int(grp["unidades"].sum()),
+            "marca":    _str(marcas_v[0])    if marcas_v    else None,
+            "segmento": _str(segmentos_v[0]) if segmentos_v else None,
+        }
 
-    marcas    = sorted([m for m in df["marca"].dropna().unique().tolist() if m])
-    segmentos = sorted([s for s in df["segmento"].dropna().unique().tolist() if s])
+    modelos = sorted(meta_dict, key=lambda m: meta_dict[m]["total"], reverse=True)
+
+    marcas    = sorted({meta_dict[m]["marca"]    for m in meta_dict if meta_dict[m]["marca"]})
+    segmentos = sorted({meta_dict[m]["segmento"] for m in meta_dict if meta_dict[m]["segmento"]})
 
     # Pivot: modelos en filas, talleres en columnas
     pivot = df.pivot_table(index="modelo", columns="taller",
                            values="unidades", aggfunc="sum", fill_value=0)
     pivot = pivot.reindex(index=modelos, columns=talleres, fill_value=0)
 
-    meta_idx = meta.set_index("modelo")
     rows = []
     for mod in modelos:
         row = {
             "modelo":   mod,
-            "marca":    meta_idx.loc[mod, "marca"]    if mod in meta_idx.index else None,
-            "segmento": meta_idx.loc[mod, "segmento"] if mod in meta_idx.index else None,
-            "total":    int(pivot.loc[mod].sum()),
+            "marca":    meta_dict[mod]["marca"],
+            "segmento": meta_dict[mod]["segmento"],
+            "total":    meta_dict[mod]["total"],
         }
         for t in talleres:
-            row[t] = int(pivot.loc[mod, t])
+            row[t] = int(pivot.loc[mod, t]) if mod in pivot.index else 0
         rows.append(row)
 
     return _json({
