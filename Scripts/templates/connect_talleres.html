@@ -805,6 +805,22 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                                     </select>
                                 </div>
                                 <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Marca</span>
+                                    <select id="mod-suc-filter-marca"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todas</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Segmento</span>
+                                    <select id="mod-suc-filter-segmento"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
                                     <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Modelo</span>
                                     <div class="relative" id="mod-modelo-wrap">
                                         <button id="mod-modelo-btn" onclick="toggleModeloDropdown()"
@@ -2153,6 +2169,24 @@ function loadModSucursal() {
                 sel.appendChild(opt);
             });
 
+            // Poblar filtro Marca
+            const selMarca = document.getElementById('mod-suc-filter-marca');
+            selMarca.innerHTML = '<option value="__all__">Todas</option>';
+            (data.marcas || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selMarca.appendChild(opt);
+            });
+
+            // Poblar filtro Segmento
+            const selSeg = document.getElementById('mod-suc-filter-segmento');
+            selSeg.innerHTML = '<option value="__all__">Todos</option>';
+            (data.segmentos || []).forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s; opt.textContent = s;
+                selSeg.appendChild(opt);
+            });
+
             // Poblar dropdown multi-select de modelo
             _populateModeloOptions(data.modelos || []);
 
@@ -2168,19 +2202,30 @@ function loadModSucursal() {
         });
 }
 
+function _getModFiltros() {
+    return {
+        taller:   document.getElementById('mod-suc-filter').value,
+        marca:    document.getElementById('mod-suc-filter-marca').value,
+        segmento: document.getElementById('mod-suc-filter-segmento').value,
+        modelos:  _selectedModelos.size ? _selectedModelos : null,
+    };
+}
+
 function renderModSucChart() {
     if (!_modSucData) return;
-    const tallerFiltro = document.getElementById('mod-suc-filter').value;
-    const modeloSel    = _selectedModelos.size ? _selectedModelos : null;
+    const { taller: tallerFiltro, marca: marcaFiltro, segmento: segmentoFiltro, modelos: modeloSel } = _getModFiltros();
     const { talleres, modelos, rows } = _modSucData;
 
     const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
 
-    // Filtrar modelos: por selección y por tener unidades en talleres activos
+    // Filtrar modelos por todos los criterios activos
     const modFiltrados = modelos.filter(m => {
         if (modeloSel && !modeloSel.has(m)) return false;
         const row = rows.find(r => r.modelo === m);
-        return row && talleresActivos.some(t => (row[t] || 0) > 0);
+        if (!row) return false;
+        if (marcaFiltro    !== '__all__' && (row.marca    || '') !== marcaFiltro)    return false;
+        if (segmentoFiltro !== '__all__' && (row.segmento || '') !== segmentoFiltro) return false;
+        return talleresActivos.some(t => (row[t] || 0) > 0);
     }).slice(0, 20);
 
     // Convertir hex a rgba manualmente
@@ -2232,15 +2277,16 @@ function renderModSucChart() {
 
 function renderModSucTable() {
     if (!_modSucData) return;
-    const tallerFiltro = document.getElementById('mod-suc-filter').value;
-    const modeloSel    = _selectedModelos.size ? _selectedModelos : null;
+    const { taller: tallerFiltro, marca: marcaFiltro, segmento: segmentoFiltro, modelos: modeloSel } = _getModFiltros();
     const { talleres, rows } = _modSucData;
 
     const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
 
-    // Filtrar filas por selección de modelos
+    // Filtrar filas por todos los criterios activos
     const rowsFiltrados = rows.filter(r => {
         if (modeloSel && !modeloSel.has(r.modelo)) return false;
+        if (marcaFiltro    !== '__all__' && (r.marca    || '') !== marcaFiltro)    return false;
+        if (segmentoFiltro !== '__all__' && (r.segmento || '') !== segmentoFiltro) return false;
         return talleresActivos.some(t => (r[t] || 0) > 0);
     });
 
@@ -2250,14 +2296,16 @@ function renderModSucTable() {
         total: talleresActivos.reduce((acc, t) => acc + (r[t] || 0), 0),
     }));
 
-    // Columnas: Modelo | talleres activos | Total
+    // Columnas: Marca | Segmento | Modelo | talleres activos | Total
     const cols = [
-        { key: 'modelo', label: 'Modelo' },
+        { key: 'marca',    label: 'Marca',    fmt: v => escHtml(String(v || '—')) },
+        { key: 'segmento', label: 'Segmento', fmt: v => escHtml(String(v || '—')) },
+        { key: 'modelo',   label: 'Modelo' },
         ...talleresActivos.map(t => ({ key: t, label: t, fmt: fmt })),
         { key: 'total', label: 'Total', fmt: fmt },
     ];
     document.getElementById('mod-suc-table').innerHTML =
-        buildTable(cols, rowsConTotal);
+        buildTable(cols, rowsConTotal, { raw: true });
 }
 
 

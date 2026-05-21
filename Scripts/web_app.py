@@ -361,7 +361,9 @@ def _safe_str(v) -> str:
 # ── Route: index ──────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("connect_talleres.html")
+    resp = app.make_response(render_template("connect_talleres.html"))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 @app.route("/logo.png")
 def serve_logo():
@@ -657,41 +659,82 @@ def api_modelos_sucursal():
         return _json({"error": "No data"}, 404)
 
     with engine.connect() as conn:
-        df = pd.read_sql(text("""
-            SELECT taller_cercano_nombre AS taller,
-                   COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
-                   COUNT(*) AS unidades
-            FROM snapshot_unit
-            WHERE run_id = :run_id
-              AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-              AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
-            GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
-            ORDER BY taller_cercano_nombre, unidades DESC
-        """), conn, params={"run_id": run_id})
+        try:
+            df = pd.read_sql(text("""
+                SELECT taller_cercano_nombre AS taller,
+                       COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                       NULLIF(TRIM(COALESCE(marca,'')), '')       AS marca,
+                       NULLIF(TRIM(COALESCE(sap_segmento,'')), '') AS segmento,
+                       COUNT(*) AS unidades
+                FROM snapshot_unit
+                WHERE run_id = :run_id
+                  AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+                  AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+                GROUP BY taller_cercano_nombre,
+                         COALESCE(NULLIF(modelo,''), vehicle_name),
+                         NULLIF(TRIM(COALESCE(marca,'')), ''),
+                         NULLIF(TRIM(COALESCE(sap_segmento,'')), '')
+                ORDER BY taller_cercano_nombre, unidades DESC
+            """), conn, params={"run_id": run_id})
+        except Exception:
+            # Fallback: columnas marca/sap_segmento aún no existen en la DB
+            df = pd.read_sql(text("""
+                SELECT taller_cercano_nombre AS taller,
+                       COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                       NULL AS marca, NULL AS segmento,
+                       COUNT(*) AS unidades
+                FROM snapshot_unit
+                WHERE run_id = :run_id
+                  AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+                  AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+                GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
+                ORDER BY taller_cercano_nombre, unidades DESC
+            """), conn, params={"run_id": run_id})
 
     if df.empty:
-        return _json({"talleres": [], "modelos": [], "rows": []})
+        return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
 
     talleres = sorted(df["taller"].unique().tolist())
-    modelos  = df.groupby("modelo")["unidades"].sum()\
-                 .sort_values(ascending=False).index.tolist()
+
+    # Metadatos por modelo: marca y segmento más frecuentes
+    def _first_valid(s):
+        v = s.dropna()
+        return v.iloc[0] if not v.empty else None
+
+    meta = df.groupby("modelo").agg(
+        total=("unidades", "sum"),
+        marca=("marca", _first_valid),
+        segmento=("segmento", _first_valid),
+    ).reset_index()
+    modelos = meta.sort_values("total", ascending=False)["modelo"].tolist()
+
+    marcas    = sorted([m for m in df["marca"].dropna().unique().tolist() if m])
+    segmentos = sorted([s for s in df["segmento"].dropna().unique().tolist() if s])
 
     # Pivot: modelos en filas, talleres en columnas
     pivot = df.pivot_table(index="modelo", columns="taller",
-                           values="unidades", fill_value=0)
+                           values="unidades", aggfunc="sum", fill_value=0)
     pivot = pivot.reindex(index=modelos, columns=talleres, fill_value=0)
 
+    meta_idx = meta.set_index("modelo")
     rows = []
     for mod in modelos:
-        row = {"modelo": mod, "total": int(pivot.loc[mod].sum())}
+        row = {
+            "modelo":   mod,
+            "marca":    meta_idx.loc[mod, "marca"]    if mod in meta_idx.index else None,
+            "segmento": meta_idx.loc[mod, "segmento"] if mod in meta_idx.index else None,
+            "total":    int(pivot.loc[mod].sum()),
+        }
         for t in talleres:
             row[t] = int(pivot.loc[mod, t])
         rows.append(row)
 
     return _json({
-        "talleres": talleres,
-        "modelos":  modelos,
-        "rows":     rows,
+        "talleres":  talleres,
+        "modelos":   modelos,
+        "marcas":    marcas,
+        "segmentos": segmentos,
+        "rows":      rows,
     })
 
 # ── Route: /api/radio-search ─────────────────────────────────────────────────

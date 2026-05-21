@@ -670,6 +670,7 @@ def run_migrations(engine):
         "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_automotora TEXT",
         "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_rut_cliente TEXT",
         "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS sap_baumuster  TEXT",
+        "ALTER TABLE snapshot_unit ADD COLUMN IF NOT EXISTS marca          TEXT",
         "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS zona           TEXT",
         "ALTER TABLE dim_taller    ADD COLUMN IF NOT EXISTS pais           TEXT",
     ]
@@ -694,8 +695,11 @@ def upsert_dim_taller(engine, df_talleres):
     """)
     cols = ["taller_id","taller_nombre","lat","lon","zona","pais"]
     with engine.begin() as conn:
+        # Desactivar todos primero: el upsert reactivará solo los del Excel actual.
+        # Esto limpia talleres renombrados o eliminados que quedan huérfanos en la tabla.
+        conn.execute(text("UPDATE dim_taller SET activo = FALSE"))
         conn.execute(sql, df_talleres[cols].to_dict("records"))
-    log.info("dim_taller upsert OK | filas=%s", len(df_talleres))
+    log.info("dim_taller upsert OK | activos=%s", len(df_talleres))
 
 def insert_snapshot_run(engine, snap_ts, local_iso, hour_bucket, total_units_snapshot):
     cal = build_snapshot_calendar_fields(snap_ts)
@@ -731,7 +735,9 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
         df["patente"] = df["Patente"].where(df["Patente"].notna(), df.get("patente"))
     if "Modelo" in df.columns:
         df["modelo"] = df["Modelo"].where(df["Modelo"].notna(), None)
-    for col in ["vin","imei","patente","empresa","vehicle_name","modelo","can_odometer","can_horometer","can_odoliter","has_can_data",
+    if "Marca" in df.columns:
+        df["marca"] = df["Marca"].where(df["Marca"].notna(), None)
+    for col in ["vin","imei","patente","empresa","vehicle_name","modelo","marca","can_odometer","can_horometer","can_odoliter","has_can_data",
                 "sap_serie","sap_segmento","sap_automotora","sap_rut_cliente","sap_baumuster"]:
         if col not in df.columns: df[col] = None
     df["run_id"]          = run_id
@@ -745,7 +751,7 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
             "run_id": int(r["run_id"]), "snapshot_ts_utc": r["snapshot_ts_utc"],
             "snapshot_date": r["snapshot_date"], "unit_id": s("unit_id"),
             "vin": s("vin"), "imei": s("imei"), "patente": s("patente"),
-            "empresa": s("empresa"), "vehicle_name": s("vehicle_name"), "modelo": s("modelo"),
+            "empresa": s("empresa"), "vehicle_name": s("vehicle_name"), "modelo": s("modelo"), "marca": s("marca"),
             "lat": float(r["lat"]), "lon": float(r["lon"]),
             "taller_cercano_id": s("taller_cercano_id"),
             "taller_cercano_nombre": s("taller_cercano_nombre"),
@@ -764,18 +770,19 @@ def insert_snapshot_unit(engine, run_id, snap_ts, df_units):
         })
     sql = text("""
         INSERT INTO snapshot_unit (run_id,snapshot_ts_utc,snapshot_date,unit_id,vin,imei,patente,
-            empresa,vehicle_name,modelo,lat,lon,geom,taller_cercano_id,taller_cercano_nombre,
+            empresa,vehicle_name,modelo,marca,lat,lon,geom,taller_cercano_id,taller_cercano_nombre,
             distancia_taller_cercano_km,dentro_radio_taller,radio_taller_km,
             can_odometer,can_horometer,can_odoliter,has_can_data,
             sap_serie,sap_segmento,sap_automotora,sap_rut_cliente,sap_baumuster)
         VALUES (:run_id,:snapshot_ts_utc,:snapshot_date,:unit_id,:vin,:imei,:patente,
-            :empresa,:vehicle_name,:modelo,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),
+            :empresa,:vehicle_name,:modelo,:marca,:lat,:lon,ST_SetSRID(ST_MakePoint(:lon,:lat),4326),
             :taller_cercano_id,:taller_cercano_nombre,:distancia_taller_cercano_km,
             :dentro_radio_taller,:radio_taller_km,
             :can_odometer,:can_horometer,:can_odoliter,:has_can_data,
             :sap_serie,:sap_segmento,:sap_automotora,:sap_rut_cliente,:sap_baumuster)
         ON CONFLICT (run_id,unit_id) DO UPDATE SET
-            empresa=EXCLUDED.empresa,vehicle_name=EXCLUDED.vehicle_name,modelo=EXCLUDED.modelo,
+            empresa=EXCLUDED.empresa,vehicle_name=EXCLUDED.vehicle_name,
+            modelo=EXCLUDED.modelo,marca=EXCLUDED.marca,
             taller_cercano_id=EXCLUDED.taller_cercano_id,
             taller_cercano_nombre=EXCLUDED.taller_cercano_nombre,
             distancia_taller_cercano_km=EXCLUDED.distancia_taller_cercano_km,
