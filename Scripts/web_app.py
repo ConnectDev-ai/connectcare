@@ -664,37 +664,40 @@ def api_modelos_sucursal():
         return _json({"error": str(exc), "trace": _tb.format_exc()}, 500)
 
     try:
-        with engine.connect() as conn:
-            try:
-                df = pd.read_sql(text("""
-                    SELECT taller_cercano_nombre AS taller,
-                           COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
-                           NULLIF(TRIM(COALESCE(marca,'')), '')        AS marca,
-                           NULLIF(TRIM(COALESCE(sap_segmento,'')), '') AS segmento,
-                           COUNT(*) AS unidades
-                    FROM snapshot_unit
-                    WHERE run_id = :run_id
-                      AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                      AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
-                    GROUP BY taller_cercano_nombre,
-                             COALESCE(NULLIF(modelo,''), vehicle_name),
-                             NULLIF(TRIM(COALESCE(marca,'')), ''),
-                             NULLIF(TRIM(COALESCE(sap_segmento,'')), '')
-                    ORDER BY taller_cercano_nombre, unidades DESC
-                """), conn, params={"run_id": run_id})
-            except Exception:
-                df = pd.read_sql(text("""
-                    SELECT taller_cercano_nombre AS taller,
-                           COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
-                           NULL::text AS marca, NULL::text AS segmento,
-                           COUNT(*) AS unidades
-                    FROM snapshot_unit
-                    WHERE run_id = :run_id
-                      AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                      AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
-                    GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
-                    ORDER BY taller_cercano_nombre, unidades DESC
-                """), conn, params={"run_id": run_id})
+        _SQL_FULL = text("""
+            SELECT taller_cercano_nombre AS taller,
+                   COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                   NULLIF(TRIM(COALESCE(marca,'')), '')        AS marca,
+                   NULLIF(TRIM(COALESCE(sap_segmento,'')), '') AS segmento,
+                   COUNT(*) AS unidades
+            FROM snapshot_unit
+            WHERE run_id = :run_id
+              AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+              AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+            GROUP BY taller_cercano_nombre,
+                     COALESCE(NULLIF(modelo,''), vehicle_name),
+                     NULLIF(TRIM(COALESCE(marca,'')), ''),
+                     NULLIF(TRIM(COALESCE(sap_segmento,'')), '')
+            ORDER BY taller_cercano_nombre, unidades DESC
+        """)
+        _SQL_BASIC = text("""
+            SELECT taller_cercano_nombre AS taller,
+                   COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                   NULL::text AS marca, NULL::text AS segmento,
+                   COUNT(*) AS unidades
+            FROM snapshot_unit
+            WHERE run_id = :run_id
+              AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+              AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+            GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
+            ORDER BY taller_cercano_nombre, unidades DESC
+        """)
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(_SQL_FULL, conn, params={"run_id": run_id})
+        except Exception:
+            with engine.connect() as conn:
+                df = pd.read_sql(_SQL_BASIC, conn, params={"run_id": run_id})
 
         if df.empty:
             return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
