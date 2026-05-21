@@ -655,98 +655,95 @@ def api_tendencia():
 @require_auth
 def api_modelos_sucursal():
     import traceback as _tb
-    try:
-        return _api_modelos_sucursal_inner()
-    except Exception as exc:
-        logging.exception("modelos-sucursal error")
-        return _json({"error": str(exc), "trace": _tb.format_exc()}, 500)
-
-def _api_modelos_sucursal_inner():
     run_id, _ = _latest_run()
     if run_id is None:
         return _json({"error": "No data"}, 404)
 
-    with engine.connect() as conn:
-        try:
-            df = pd.read_sql(text("""
-                SELECT taller_cercano_nombre AS taller,
-                       COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
-                       NULLIF(TRIM(COALESCE(marca,'')), '')       AS marca,
-                       NULLIF(TRIM(COALESCE(sap_segmento,'')), '') AS segmento,
-                       COUNT(*) AS unidades
-                FROM snapshot_unit
-                WHERE run_id = :run_id
-                  AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                  AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
-                GROUP BY taller_cercano_nombre,
-                         COALESCE(NULLIF(modelo,''), vehicle_name),
-                         NULLIF(TRIM(COALESCE(marca,'')), ''),
-                         NULLIF(TRIM(COALESCE(sap_segmento,'')), '')
-                ORDER BY taller_cercano_nombre, unidades DESC
-            """), conn, params={"run_id": run_id})
-        except Exception:
-            # Fallback: columnas marca/sap_segmento aún no existen en la DB
-            df = pd.read_sql(text("""
-                SELECT taller_cercano_nombre AS taller,
-                       COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
-                       NULL AS marca, NULL AS segmento,
-                       COUNT(*) AS unidades
-                FROM snapshot_unit
-                WHERE run_id = :run_id
-                  AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                  AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
-                GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
-                ORDER BY taller_cercano_nombre, unidades DESC
-            """), conn, params={"run_id": run_id})
+    try:
+        with engine.connect() as conn:
+            try:
+                df = pd.read_sql(text("""
+                    SELECT taller_cercano_nombre AS taller,
+                           COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                           NULLIF(TRIM(COALESCE(marca,'')), '')        AS marca,
+                           NULLIF(TRIM(COALESCE(sap_segmento,'')), '') AS segmento,
+                           COUNT(*) AS unidades
+                    FROM snapshot_unit
+                    WHERE run_id = :run_id
+                      AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+                      AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+                    GROUP BY taller_cercano_nombre,
+                             COALESCE(NULLIF(modelo,''), vehicle_name),
+                             NULLIF(TRIM(COALESCE(marca,'')), ''),
+                             NULLIF(TRIM(COALESCE(sap_segmento,'')), '')
+                    ORDER BY taller_cercano_nombre, unidades DESC
+                """), conn, params={"run_id": run_id})
+            except Exception:
+                df = pd.read_sql(text("""
+                    SELECT taller_cercano_nombre AS taller,
+                           COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                           NULL::text AS marca, NULL::text AS segmento,
+                           COUNT(*) AS unidades
+                    FROM snapshot_unit
+                    WHERE run_id = :run_id
+                      AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
+                      AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+                    GROUP BY taller_cercano_nombre, COALESCE(NULLIF(modelo,''), vehicle_name)
+                    ORDER BY taller_cercano_nombre, unidades DESC
+                """), conn, params={"run_id": run_id})
 
-    if df.empty:
-        return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
+        if df.empty:
+            return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
 
-    def _str(v):
-        return None if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+        def _s(v):
+            if v is None: return None
+            try:
+                if pd.isna(v): return None
+            except Exception: pass
+            s = str(v).strip()
+            return None if s in ("", "nan", "None") else s
 
-    talleres = sorted(df["taller"].dropna().unique().tolist())
+        talleres = sorted(df["taller"].dropna().unique().tolist())
 
-    # Metadatos por modelo: primera marca/segmento válida y total de unidades
-    meta_dict = {}
-    for mod, grp in df.groupby("modelo"):
-        marcas_v   = [x for x in grp["marca"].tolist()    if x is not None and str(x) != "nan" and str(x) != ""]
-        segmentos_v = [x for x in grp["segmento"].tolist() if x is not None and str(x) != "nan" and str(x) != ""]
-        meta_dict[mod] = {
-            "total":    int(grp["unidades"].sum()),
-            "marca":    _str(marcas_v[0])    if marcas_v    else None,
-            "segmento": _str(segmentos_v[0]) if segmentos_v else None,
-        }
+        meta_dict = {}
+        for mod, grp in df.groupby("modelo"):
+            mv = [_s(x) for x in grp["marca"].tolist()    if _s(x)]
+            sv = [_s(x) for x in grp["segmento"].tolist() if _s(x)]
+            meta_dict[str(mod)] = {
+                "total":    int(grp["unidades"].sum()),
+                "marca":    mv[0] if mv else None,
+                "segmento": sv[0] if sv else None,
+            }
 
-    modelos = sorted(meta_dict, key=lambda m: meta_dict[m]["total"], reverse=True)
+        modelos = sorted(meta_dict, key=lambda m: meta_dict[m]["total"], reverse=True)
+        marcas    = sorted({meta_dict[m]["marca"]    for m in meta_dict if meta_dict[m]["marca"]})
+        segmentos = sorted({meta_dict[m]["segmento"] for m in meta_dict if meta_dict[m]["segmento"]})
 
-    marcas    = sorted({meta_dict[m]["marca"]    for m in meta_dict if meta_dict[m]["marca"]})
-    segmentos = sorted({meta_dict[m]["segmento"] for m in meta_dict if meta_dict[m]["segmento"]})
+        pivot = df.pivot_table(index="modelo", columns="taller",
+                               values="unidades", aggfunc="sum", fill_value=0)
+        pivot = pivot.reindex(index=modelos, columns=talleres, fill_value=0)
 
-    # Pivot: modelos en filas, talleres en columnas
-    pivot = df.pivot_table(index="modelo", columns="taller",
-                           values="unidades", aggfunc="sum", fill_value=0)
-    pivot = pivot.reindex(index=modelos, columns=talleres, fill_value=0)
+        rows = []
+        for mod in modelos:
+            row = {
+                "modelo":   mod,
+                "marca":    meta_dict[mod]["marca"],
+                "segmento": meta_dict[mod]["segmento"],
+                "total":    meta_dict[mod]["total"],
+            }
+            for t in talleres:
+                try:
+                    row[t] = int(pivot.loc[mod, t])
+                except Exception:
+                    row[t] = 0
+            rows.append(row)
 
-    rows = []
-    for mod in modelos:
-        row = {
-            "modelo":   mod,
-            "marca":    meta_dict[mod]["marca"],
-            "segmento": meta_dict[mod]["segmento"],
-            "total":    meta_dict[mod]["total"],
-        }
-        for t in talleres:
-            row[t] = int(pivot.loc[mod, t]) if mod in pivot.index else 0
-        rows.append(row)
+        return _json({"talleres": talleres, "modelos": modelos,
+                      "marcas": marcas, "segmentos": segmentos, "rows": rows})
 
-    return _json({
-        "talleres":  talleres,
-        "modelos":   modelos,
-        "marcas":    marcas,
-        "segmentos": segmentos,
-        "rows":      rows,
-    })
+    except Exception as exc:
+        logging.exception("modelos-sucursal error")
+        return _json({"error": str(exc), "trace": _tb.format_exc()}, 500)
 
 # ── Route: /api/radio-search ─────────────────────────────────────────────────
 @app.route("/api/radio-search")
