@@ -404,7 +404,7 @@ def load_master_flota(xlsx_path: str) -> pd.DataFrame:
         if col not in df.columns:
             df[col] = None
 
-    df["VIN"]      = df["VIN"].astype(str).str.strip().replace("nan", None)
+    df["VIN"]      = df["VIN"].astype(str).str.strip().str.upper().replace("NAN", None)
     df["IMEI_str"] = df["IMEI"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True).replace("nan", None)
 
     out = df[["VIN", "IMEI_str", "Empresa", "Marca", "Modelo", "Patente"]].copy()
@@ -453,9 +453,10 @@ def enrich_units_with_master(df_units: pd.DataFrame, df_master: pd.DataFrame) ->
 
     df = df.drop(columns=["_imei_str"], errors="ignore")
 
-    matched = df["Empresa"].notna().sum()
-    log.info("Enriquecimiento con master_Flota: %s/%s unidades con empresa (%.1f%%)",
-             matched, len(df), matched / len(df) * 100)
+    matched       = df["Empresa"].notna().sum()
+    matched_marca = df["Marca"].notna().sum() if "Marca" in df.columns else 0
+    log.info("Enriquecimiento con master_Flota: %s/%s con empresa, %s/%s con marca (%.1f%%)",
+             matched, len(df), matched_marca, len(df), matched / len(df) * 100)
 
     return df
 
