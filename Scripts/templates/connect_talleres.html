@@ -1267,12 +1267,30 @@ function loadMapData() {
             renderLayers();
             flyToData(data);
             document.getElementById('fl-loading').style.display = 'none';
+            // Pre-cargar todas las secciones en background para navegación instantánea
+            _preloadAllPages();
         })
         .catch(err => {
             const el = document.getElementById('fl-loading');
             el.innerHTML = `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">
                 Error al cargar datos:<br>${err.message}</div>`;
         });
+}
+
+function _preloadAllPages() {
+    const pages = [
+        ['ejecutivo',    loadEjecutivo],
+        ['tendencia',    loadTendencia],
+        ['estado-flota', loadEstadoFlota],
+        ['detalle',      () => loadDetalle({})],
+    ];
+    pages.forEach(([name, fn], i) => {
+        if (!_loaded[name]) {
+            _loaded[name] = true;
+            // Escalonar las llamadas para no saturar el servidor
+            setTimeout(fn, (i + 1) * 400);
+        }
+    });
 }
 
 function fmt(n)  { return n != null ? Number(n).toLocaleString('es-CL') : '—'; }

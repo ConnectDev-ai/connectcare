@@ -909,47 +909,56 @@ def api_estado_flota():
     df["marca"]         = df["marca"].fillna("") if "marca"    in df.columns else ""
     df["segmento"]      = df["segmento"].fillna("") if "segmento" in df.columns else ""
 
+    # Vectorizar detección de marca/umbral (evita iterrows lento)
+    modelos_arr  = df["modelo"].tolist()
+    marca_umbral = [_detectar_marca(m) for m in modelos_arr]
+    df["_marca_det"] = [x[0] for x in marca_umbral]
+    df["_umbral"]    = [x[1] for x in marca_umbral]
+
+    odo_arr  = pd.to_numeric(df["can_odometer"],  errors="coerce")
+    hora_arr = pd.to_numeric(df["can_horometer"], errors="coerce")
+
+    def _prox(odo, umbral):
+        if pd.isna(odo) or odo <= 0: return (None, None)
+        return _proximo_servicio(float(odo), umbral)
+
+    prox_rest = [_prox(o, u) for o, u in zip(odo_arr, df["_umbral"])]
+    df["_prox_km"]  = [x[0] for x in prox_rest]
+    df["_km_rest"]  = [x[1] for x in prox_rest]
+    df["_estado"]   = df["_km_rest"].apply(_estado_mantenimiento)
+    df["_pais"]     = [_pais_from_coords(la, lo) for la, lo in zip(df["lat"], df["lon"])]
+
+    vin_keys = (df["unit_id"].fillna("").astype(str).str.strip().str.upper()
+                .where(df["unit_id"].notna(), df["vin"].fillna("").astype(str).str.strip().str.upper()))
+
     rows = []
-    for _, r in df.iterrows():
-        odo  = r["can_odometer"]  if not pd.isna(r.get("can_odometer"))  else None
-        hora = r["can_horometer"] if not pd.isna(r.get("can_horometer")) else None
-        marca_det, umbral = _detectar_marca(r["modelo"])
-
-        prox_km = km_rest = None
-        if odo is not None and odo > 0:
-            prox_km, km_rest = _proximo_servicio(float(odo), umbral)
-
-        estado = _estado_mantenimiento(km_rest)
-
-        vin_key = str(r.get("unit_id") or r.get("vin") or "").strip().upper()
-        fallas  = _FALLAS_BY_VIN.get(vin_key, [])
+    for i, r in enumerate(df.itertuples(index=False)):
+        odo  = None if pd.isna(odo_arr.iloc[i])  else round(float(odo_arr.iloc[i]),  0)
+        hora = None if pd.isna(hora_arr.iloc[i]) else round(float(hora_arr.iloc[i]), 1)
+        fallas      = _FALLAS_BY_VIN.get(vin_keys.iloc[i], [])
         prioridades = [f["prioridad"] for f in fallas if f.get("prioridad")]
-        prioridad_max = (
-            "Urgente" if "Urgente" in prioridades else
-            "Seguimiento" if prioridades else None
-        )
-
-        marca_val    = _safe_str(r.get("marca"))    or None
-        segmento_val = _safe_str(r.get("segmento")) or None
-
+        prioridad_max = ("Urgente" if "Urgente" in prioridades else
+                         "Seguimiento" if prioridades else None)
+        prox_km = df["_prox_km"].iloc[i]
+        km_rest = df["_km_rest"].iloc[i]
         rows.append({
-            "unit_id":             _safe_str(r["unit_id"]),
-            "vin":                 _safe_str(r["vin"]),
-            "patente":             _safe_str(r["patente"]),
-            "empresa":             _safe_str(r["empresa"]),
-            "modelo":              _safe_str(r["modelo"]),
-            "marca":               marca_val,
-            "segmento":            segmento_val,
-            "taller":              _safe_str(r["taller"]),
-            "pais":                _pais_from_coords(r.get("lat"), r.get("lon")),
-            "distancia_km":        None if pd.isna(r.get("distancia_taller_cercano_km")) else round(float(r["distancia_taller_cercano_km"]), 1),
-            "can_odometer":        None if odo  is None else round(float(odo),  0),
-            "can_horometer":       None if hora is None else round(float(hora), 1),
-            "marca_detectada":     marca_det,
-            "umbral_km":           umbral,
+            "unit_id":             _safe_str(r.unit_id),
+            "vin":                 _safe_str(r.vin),
+            "patente":             _safe_str(r.patente),
+            "empresa":             _safe_str(r.empresa),
+            "modelo":              _safe_str(r.modelo),
+            "marca":               _safe_str(r.marca) or None,
+            "segmento":            _safe_str(r.segmento) or None,
+            "taller":              _safe_str(r.taller),
+            "pais":                df["_pais"].iloc[i],
+            "distancia_km":        None if pd.isna(r.distancia_taller_cercano_km) else round(float(r.distancia_taller_cercano_km), 1),
+            "can_odometer":        odo,
+            "can_horometer":       hora,
+            "marca_detectada":     df["_marca_det"].iloc[i],
+            "umbral_km":           df["_umbral"].iloc[i],
             "proximo_servicio_km": None if prox_km is None else round(float(prox_km), 0),
             "km_restantes":        None if km_rest  is None else round(float(km_rest),  0),
-            "estado":              estado,
+            "estado":              df["_estado"].iloc[i],
             "fallas":              fallas,
             "fallas_count":        len(fallas),
             "prioridad_falla":     prioridad_max,
