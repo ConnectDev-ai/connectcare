@@ -1020,7 +1020,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
 
                 <!-- Filters -->
                 <div class="section-card mb-4">
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">País</label>
                             <select id="ef-pais" onchange="applyEstadoFlotaFilter()">
@@ -1035,6 +1035,18 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Empresa</label>
                             <select id="ef-empresa" onchange="applyEstadoFlotaFilter()">
                                 <option value="">Todas las empresas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Marca</label>
+                            <select id="ef-marca" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas las marcas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Segmento</label>
+                            <select id="ef-segmento" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todos los segmentos</option>
                             </select>
                         </div>
                         <div>
@@ -1057,7 +1069,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                                 <option value="sin_falla">Sin fallas</option>
                             </select>
                         </div>
-                        <div>
+                        <div class="sm:col-span-2">
                             <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Buscar patente / VIN</label>
                             <input type="text" id="ef-q" placeholder="Ej: ABCD12" oninput="applyEstadoFlotaFilterDebounced()"/>
                         </div>
@@ -2631,6 +2643,16 @@ function loadEstadoFlota() {
             empSel.innerHTML = '<option value="">Todas las empresas</option>' +
                 (data.empresas || []).map(e => `<option value="${escHtml(e)}">${escHtml(e)}</option>`).join('');
 
+            // Marca select
+            const marcaSel = document.getElementById('ef-marca');
+            marcaSel.innerHTML = '<option value="">Todas las marcas</option>' +
+                (data.marcas || []).map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+
+            // Segmento select
+            const segSel = document.getElementById('ef-segmento');
+            segSel.innerHTML = '<option value="">Todos los segmentos</option>' +
+                (data.segmentos || []).map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+
             renderEstadoFlotaTable(data.rows);
             renderEfLegend(data.rows);
             document.getElementById('ef-loading').style.display = 'none';
@@ -2660,6 +2682,8 @@ function renderEstadoFlotaTable(rows) {
             <th>Patente</th>
             <th>VIN</th>
             <th>Empresa</th>
+            <th>Marca</th>
+            <th>Segmento</th>
             <th>Modelo</th>
             <th>Taller más cercano</th>
             <th>Odómetro (km)</th>
@@ -2699,6 +2723,8 @@ function renderEstadoFlotaTable(rows) {
                 <td class="font-mono">${escHtml(r.patente || '—')}</td>
                 <td class="font-mono text-[11px] text-[#e5e2e1]/60">${escHtml(r.vin || '—')}</td>
                 <td>${escHtml(r.empresa || '—')}</td>
+                <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.marca || '—')}</td>
+                <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.segmento || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
                 <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
                 <td class="font-mono text-right">${odo}</td>
@@ -2738,24 +2764,29 @@ function renderEfLegend(rows) {
 
 function applyEstadoFlotaFilter() {
     if (!_efData) return;
-    const pais   = document.getElementById('ef-pais').value;
-    const emp    = document.getElementById('ef-empresa').value;
-    const estado = document.getElementById('ef-estado').value;
-    const dtc    = document.getElementById('ef-dtc').value;
-    const q      = document.getElementById('ef-q').value.trim().toUpperCase();
+    const pais     = document.getElementById('ef-pais').value;
+    const emp      = document.getElementById('ef-empresa').value;
+    const marca    = document.getElementById('ef-marca').value;
+    const segmento = document.getElementById('ef-segmento').value;
+    const estado   = document.getElementById('ef-estado').value;
+    const dtc      = document.getElementById('ef-dtc').value;
+    const q        = document.getElementById('ef-q').value.trim().toUpperCase();
 
     let rows = _efData.rows;
-    if (pais)   rows = rows.filter(r => r.pais === pais);
-    if (emp)    rows = rows.filter(r => r.empresa === emp);
-    if (estado) rows = rows.filter(r => r.estado  === estado);
+    if (pais)     rows = rows.filter(r => r.pais     === pais);
+    if (emp)      rows = rows.filter(r => r.empresa  === emp);
+    if (marca)    rows = rows.filter(r => r.marca    === marca);
+    if (segmento) rows = rows.filter(r => r.segmento === segmento);
+    if (estado)   rows = rows.filter(r => r.estado   === estado);
     if (dtc === 'urgente')     rows = rows.filter(r => r.prioridad_falla === 'Urgente');
     if (dtc === 'seguimiento') rows = rows.filter(r => r.prioridad_falla === 'Seguimiento');
     if (dtc === 'con_falla')   rows = rows.filter(r => r.fallas_count > 0);
     if (dtc === 'sin_falla')   rows = rows.filter(r => !r.fallas_count || r.fallas_count === 0);
-    if (q)      rows = rows.filter(r =>
+    if (q)        rows = rows.filter(r =>
         (r.patente  || '').toUpperCase().includes(q) ||
         (r.unit_id  || '').toUpperCase().includes(q) ||
         (r.empresa  || '').toUpperCase().includes(q) ||
+        (r.marca    || '').toUpperCase().includes(q) ||
         (r.modelo   || '').toUpperCase().includes(q)
     );
     updateEfKPIs(rows);
@@ -2769,7 +2800,7 @@ function applyEstadoFlotaFilterDebounced() {
 
 function downloadEstadoFlotaCSV() {
     if (!_efData) return;
-    const cols = ['pais','patente','vin','empresa','modelo','taller','can_odometer','can_horometer',
+    const cols = ['pais','patente','vin','empresa','marca','segmento','modelo','taller','can_odometer','can_horometer',
                   'marca_detectada','umbral_km','proximo_servicio_km','km_restantes','estado'];
     const header = cols.join(',');
     const body = _efData.rows.map(r =>

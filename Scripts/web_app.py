@@ -876,17 +876,27 @@ def api_estado_flota():
         return _json({"error": "No data"}, 404)
 
     with engine.connect() as conn:
-        df = pd.read_sql(text("""
+        existing_cols = pd.read_sql(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='snapshot_unit'"
+        ), conn)["column_name"].tolist()
+
+    marca_expr = "NULLIF(TRIM(COALESCE(su.marca,'')),'')"        if "marca"        in existing_cols else "NULL::text"
+    seg_expr   = "NULLIF(TRIM(COALESCE(su.sap_segmento,'')),'')" if "sap_segmento" in existing_cols else "NULL::text"
+
+    with engine.connect() as conn:
+        df = pd.read_sql(text(f"""
             SELECT su.unit_id, su.vin, su.patente, su.empresa,
                    COALESCE(
                        NULLIF(su.modelo,''),
-                       CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{17}$'
+                       CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
                             THEN NULL ELSE su.vehicle_name END
                    ) AS modelo,
                    su.taller_cercano_nombre AS taller,
                    su.distancia_taller_cercano_km,
                    su.can_odometer, su.can_horometer, su.has_can_data,
-                   su.lat, su.lon
+                   su.lat, su.lon,
+                   {marca_expr} AS marca,
+                   {seg_expr}   AS segmento
             FROM snapshot_unit su
             WHERE su.run_id = :run_id
         """), conn, params={"run_id": run_id})
@@ -896,18 +906,14 @@ def api_estado_flota():
     df["has_can_data"]  = df["has_can_data"].fillna(False).astype(bool)
     df["modelo"]        = df["modelo"].fillna("")
     df["empresa"]       = df["empresa"].fillna("")
-
-    # Filtros opcionales
-    empresa_f = request.args.get("empresa", "")
-    estado_f  = request.args.get("estado", "")
-    if empresa_f:
-        df = df[df["empresa"] == empresa_f]
+    df["marca"]         = df["marca"].fillna("") if "marca"    in df.columns else ""
+    df["segmento"]      = df["segmento"].fillna("") if "segmento" in df.columns else ""
 
     rows = []
     for _, r in df.iterrows():
         odo  = r["can_odometer"]  if not pd.isna(r.get("can_odometer"))  else None
         hora = r["can_horometer"] if not pd.isna(r.get("can_horometer")) else None
-        marca, umbral = _detectar_marca(r["modelo"])
+        marca_det, umbral = _detectar_marca(r["modelo"])
 
         prox_km = km_rest = None
         if odo is not None and odo > 0:
@@ -923,18 +929,23 @@ def api_estado_flota():
             "Seguimiento" if prioridades else None
         )
 
+        marca_val    = _safe_str(r.get("marca"))    or None
+        segmento_val = _safe_str(r.get("segmento")) or None
+
         rows.append({
             "unit_id":             _safe_str(r["unit_id"]),
             "vin":                 _safe_str(r["vin"]),
             "patente":             _safe_str(r["patente"]),
             "empresa":             _safe_str(r["empresa"]),
             "modelo":              _safe_str(r["modelo"]),
+            "marca":               marca_val,
+            "segmento":            segmento_val,
             "taller":              _safe_str(r["taller"]),
             "pais":                _pais_from_coords(r.get("lat"), r.get("lon")),
             "distancia_km":        None if pd.isna(r.get("distancia_taller_cercano_km")) else round(float(r["distancia_taller_cercano_km"]), 1),
             "can_odometer":        None if odo  is None else round(float(odo),  0),
             "can_horometer":       None if hora is None else round(float(hora), 1),
-            "marca_detectada":     marca,
+            "marca_detectada":     marca_det,
             "umbral_km":           umbral,
             "proximo_servicio_km": None if prox_km is None else round(float(prox_km), 0),
             "km_restantes":        None if km_rest  is None else round(float(km_rest),  0),
@@ -949,15 +960,24 @@ def api_estado_flota():
     _ord = {"CRITICO": 0, "ATENCION": 1, "OK": 2, "SIN_DATOS": 3}
     rows.sort(key=lambda x: (_ord.get(x["estado"], 9), x["km_restantes"] or 9_999_999))
 
-    if estado_f:
-        rows = [r for r in rows if r["estado"] == estado_f]
+    # Filtros opcionales (post-sort para no afectar el orden)
+    empresa_f  = request.args.get("empresa",  "")
+    estado_f   = request.args.get("estado",   "")
+    marca_f    = request.args.get("marca",    "")
+    segmento_f = request.args.get("segmento", "")
+    if empresa_f:  rows = [r for r in rows if r["empresa"]  == empresa_f]
+    if estado_f:   rows = [r for r in rows if r["estado"]   == estado_f]
+    if marca_f:    rows = [r for r in rows if r["marca"]    == marca_f]
+    if segmento_f: rows = [r for r in rows if r["segmento"] == segmento_f]
 
     con_can    = sum(1 for r in rows if r["estado"] != "SIN_DATOS")
     sin_can    = sum(1 for r in rows if r["estado"] == "SIN_DATOS")
     criticos   = sum(1 for r in rows if r["estado"] == "CRITICO")
     atencion   = sum(1 for r in rows if r["estado"] == "ATENCION")
     con_fallas = sum(1 for r in rows if r["fallas_count"] > 0)
-    empresas   = sorted({r["empresa"] for r in rows if r["empresa"]})
+    empresas   = sorted({r["empresa"]  for r in rows if r["empresa"]})
+    marcas     = sorted({r["marca"]    for r in rows if r["marca"]})
+    segmentos  = sorted({r["segmento"] for r in rows if r["segmento"]})
 
     return _json({
         "snap_ts": snap_ts[:16] if snap_ts else "",
@@ -968,8 +988,10 @@ def api_estado_flota():
             "atencion":   atencion,
             "con_fallas": con_fallas,
         },
-        "empresas": empresas,
-        "rows":     rows,
+        "empresas":  empresas,
+        "marcas":    marcas,
+        "segmentos": segmentos,
+        "rows":      rows,
     })
 
 # ── Route: /api/export/<tipo> (CSV download) ──────────────────────────────────
