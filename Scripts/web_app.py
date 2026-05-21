@@ -654,6 +654,14 @@ def api_tendencia():
 @app.route("/api/modelos-sucursal")
 @require_auth
 def api_modelos_sucursal():
+    import traceback as _tb
+    try:
+        return _api_modelos_sucursal_inner()
+    except Exception as exc:
+        logging.exception("modelos-sucursal error")
+        return _json({"error": str(exc), "trace": _tb.format_exc()}, 500)
+
+def _api_modelos_sucursal_inner():
     run_id, _ = _latest_run()
     if run_id is None:
         return _json({"error": "No data"}, 404)
