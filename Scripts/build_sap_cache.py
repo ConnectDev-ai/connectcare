@@ -81,7 +81,7 @@ def fetch_sap(vin: str, session: requests.Session) -> dict:
             },
             timeout=15,
         )
-        if r.status_code != 200:
+        if r.status_code not in (200, 201):
             log.debug("SAP %s → HTTP %s", vin, r.status_code)
             return {}
         data = r.json().get("d", {})

@@ -130,7 +130,7 @@ def _fetch_sap_vehicle(vin: str, session: requests.Session) -> dict:
             },
             timeout=15,
         )
-        if r.status_code != 200:
+        if r.status_code not in (200, 201):
             return {}
         data = r.json().get("d", {})
         if not data.get("EVhvin"):

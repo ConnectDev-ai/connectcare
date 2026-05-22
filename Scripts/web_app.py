@@ -12,6 +12,7 @@ Producción: gunicorn -w 4 -b 0.0.0.0:5000 "web_app:app"
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from functools import wraps
