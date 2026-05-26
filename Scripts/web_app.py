@@ -536,8 +536,15 @@ def api_ejecutivo():
         df["distancia_taller_cercano_km"], errors="coerce")
     df["zona"] = df["zona"].fillna("Sin zona").str.strip()
     df.loc[df["zona"] == "", "zona"] = "Sin zona"
-    df["pais"] = df.apply(
-        lambda r: _pais_from_coords(r["taller_lat"], r["taller_lon"]), axis=1)
+
+    # Vectorizado con np.select — evita llamar _pais_from_coords fila por fila
+    _tlat = pd.to_numeric(df["taller_lat"], errors="coerce")
+    _tlon = pd.to_numeric(df["taller_lon"], errors="coerce")
+    df["pais"] = np.select(
+        [_tlat > 0, _tlat <= -17, _tlon > -62],
+        ["Colombia",  "Chile",     "Paraguay"],
+        default="Peru",
+    )
 
     resumen = (
         df.groupby("taller_cercano_nombre")
@@ -589,13 +596,19 @@ def api_ejecutivo():
     zona_grp["dist_prom"]    = zona_grp["dist_prom"].round(1)
     zona_grp["dentro"]       = zona_grp["dentro"].astype(int)
 
+    # Pre-calcular orden de zonas no-Chile una sola vez (antes era O(n²))
+    _non_chile_order: dict = {}
+    for _p in zona_grp["pais"].unique():
+        if _p != "Chile":
+            for _i, _z in enumerate(sorted(zona_grp[zona_grp["pais"] == _p]["zona"].unique())):
+                _non_chile_order[(_p, _z)] = _i
+
     def _zona_sort(row):
         pais_key = PAIS_ORDER.get(row["pais"], 99) * 100
         if row["pais"] == "Chile":
             zone_key = CHILE_ZONA_ORDER.index(row["zona"]) if row["zona"] in CHILE_ZONA_ORDER else 98
         else:
-            zone_key = sorted(zona_grp[zona_grp["pais"] == row["pais"]]["zona"].unique()).index(row["zona"]) \
-                       if row["zona"] in zona_grp[zona_grp["pais"] == row["pais"]]["zona"].values else 98
+            zone_key = _non_chile_order.get((row["pais"], row["zona"]), 98)
         return pais_key + zone_key
 
     zona_grp["sort_key"] = zona_grp.apply(_zona_sort, axis=1)
@@ -989,21 +1002,42 @@ def api_estado_flota():
     df["_prox_km"]  = [x[0] for x in prox_rest]
     df["_km_rest"]  = [x[1] for x in prox_rest]
     df["_estado"]   = df["_km_rest"].apply(_estado_mantenimiento)
-    df["_pais"]     = [_pais_from_coords(la, lo) for la, lo in zip(df["lat"], df["lon"])]
+    # Vectorizado — evita llamar _pais_from_coords fila por fila
+    _ef_lat = pd.to_numeric(df["lat"], errors="coerce")
+    _ef_lon = pd.to_numeric(df["lon"], errors="coerce")
+    df["_pais"] = np.select(
+        [_ef_lat > 0, _ef_lat <= -17, _ef_lon > -62],
+        ["Colombia",   "Chile",        "Paraguay"],
+        default="Peru",
+    )
 
     vin_keys = (df["unit_id"].fillna("").astype(str).str.strip().str.upper()
                 .where(df["unit_id"].notna(), df["vin"].fillna("").astype(str).str.strip().str.upper()))
 
+    # Pre-extraer Series a arrays nativos antes del loop.
+    # arr[i] (numpy/Python) es ~10x más rápido que series.iloc[i] (pandas).
+    _odo_v   = odo_arr.values
+    _hora_v  = hora_arr.values
+    _prox_v  = df["_prox_km"].values
+    _rest_v  = df["_km_rest"].values
+    _pais_v  = df["_pais"].values
+    _marc_v  = df["_marca_det"].values
+    _umbl_v  = df["_umbral"].values
+    _est_v   = df["_estado"].values
+    _vin_v   = vin_keys.values
+    _dist_v  = pd.to_numeric(df["distancia_taller_cercano_km"], errors="coerce").values
+
     rows = []
     for i, r in enumerate(df.itertuples(index=False)):
-        odo  = None if pd.isna(odo_arr.iloc[i])  else round(float(odo_arr.iloc[i]),  0)
-        hora = None if pd.isna(hora_arr.iloc[i]) else round(float(hora_arr.iloc[i]), 1)
-        fallas      = _FALLAS_BY_VIN.get(vin_keys.iloc[i], [])
+        ov = _odo_v[i];  odo  = None if math.isnan(ov)  else round(float(ov),  0)
+        hv = _hora_v[i]; hora = None if math.isnan(hv)  else round(float(hv),  1)
+        dv = _dist_v[i]; dist = None if math.isnan(dv)  else round(float(dv),  1)
+        fallas      = _FALLAS_BY_VIN.get(_vin_v[i], [])
         prioridades = [f["prioridad"] for f in fallas if f.get("prioridad")]
         prioridad_max = ("Urgente" if "Urgente" in prioridades else
                          "Seguimiento" if prioridades else None)
-        prox_km = df["_prox_km"].iloc[i]
-        km_rest = df["_km_rest"].iloc[i]
+        prox_km = _prox_v[i]
+        km_rest = _rest_v[i]
         rows.append({
             "unit_id":             _safe_str(r.unit_id),
             "vin":                 _safe_str(r.vin),
@@ -1013,15 +1047,15 @@ def api_estado_flota():
             "marca":               _safe_str(r.marca) or None,
             "segmento":            _safe_str(r.segmento) or None,
             "taller":              _safe_str(r.taller),
-            "pais":                df["_pais"].iloc[i],
-            "distancia_km":        None if pd.isna(r.distancia_taller_cercano_km) else round(float(r.distancia_taller_cercano_km), 1),
+            "pais":                _pais_v[i],
+            "distancia_km":        dist,
             "can_odometer":        odo,
             "can_horometer":       hora,
-            "marca_detectada":     df["_marca_det"].iloc[i],
-            "umbral_km":           df["_umbral"].iloc[i],
+            "marca_detectada":     _marc_v[i],
+            "umbral_km":           int(_umbl_v[i]),
             "proximo_servicio_km": None if prox_km is None else round(float(prox_km), 0),
-            "km_restantes":        None if km_rest  is None else round(float(km_rest),  0),
-            "estado":              df["_estado"].iloc[i],
+            "km_restantes":        None if km_rest is None else round(float(km_rest),  0),
+            "estado":              _est_v[i],
             "fallas":              fallas,
             "fallas_count":        len(fallas),
             "prioridad_falla":     prioridad_max,
