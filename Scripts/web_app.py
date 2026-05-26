@@ -80,6 +80,20 @@ TICKET_MANAGERS = [e.strip() for e in os.getenv("TICKET_MANAGERS", "").split(","
 _token_cache: dict[str, float] = {}
 _TOKEN_CACHE_TTL = 300  # segundos
 
+# ── Response cache ────────────────────────────────────────────────────────────
+# Cachea las respuestas JSON serializadas para evitar re-ejecutar queries + pandas.
+# Los datos cambian máximo una vez al día (pipeline), así que 5 min es seguro.
+_RESP_CACHE: dict[str, tuple[float, bytes]] = {}  # key → (expiry_ts, body)
+_RESP_CACHE_TTL = 300  # 5 minutos
+
+# ── Latest-run cache ──────────────────────────────────────────────────────────
+# Evita un round-trip extra a la DB en cada endpoint solo para obtener el run_id.
+_LR_CACHE: list = [0.0, None, ""]  # [expiry_ts, run_id, snap_ts]
+
+# ── Schema columns cache ──────────────────────────────────────────────────────
+# Cachea el resultado de information_schema.columns — evita consultarlo en cada request.
+_SCHEMA_COLS: list | None = None
+
 # ── Fallas DTC ────────────────────────────────────────────────────────────────
 def _load_fallas() -> dict[str, list[dict]]:
     """Carga el reporte de fallas más reciente de Data/reporte_fallas_*.xlsx → dict VIN→fallas."""
@@ -310,6 +324,39 @@ def _json(data: Any, status: int = 200) -> Response:
         status=status, mimetype="application/json",
     )
 
+# ── Response cache helpers ────────────────────────────────────────────────────
+def _cache_hit(key: str) -> "Response | None":
+    """Retorna respuesta cacheada si es válida, si no None."""
+    entry = _RESP_CACHE.get(key)
+    if entry and entry[0] > time.time():
+        r = app.response_class(entry[1], status=200, mimetype="application/json")
+        r.headers["Cache-Control"] = f"private, max-age={_RESP_CACHE_TTL}"
+        r.headers["X-Cache"] = "HIT"
+        return r
+    return None
+
+def _cache_json(key: str, data: Any, status: int = 200) -> Response:
+    """Serializa data, guarda en caché, retorna respuesta con Cache-Control."""
+    body = json.dumps(data, cls=_SafeEnc, ensure_ascii=False).encode()
+    _RESP_CACHE[key] = (time.time() + _RESP_CACHE_TTL, body)
+    r = app.response_class(body, status=status, mimetype="application/json")
+    r.headers["Cache-Control"] = f"private, max-age={_RESP_CACHE_TTL}"
+    return r
+
+def _get_schema_cols() -> list:
+    """Devuelve columnas de snapshot_unit desde information_schema (cacheado para siempre)."""
+    global _SCHEMA_COLS
+    if _SCHEMA_COLS is not None:
+        return _SCHEMA_COLS
+    try:
+        with engine.connect() as conn:
+            _SCHEMA_COLS = pd.read_sql(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='snapshot_unit'"
+            ), conn)["column_name"].tolist()
+    except Exception:
+        _SCHEMA_COLS = []
+    return _SCHEMA_COLS
+
 # ── Constantes Chile ──────────────────────────────────────────────────────────
 CHILE_LAT     = (-56.0, -17.0)
 CHILE_LON     = (-76.0, -66.0)
@@ -317,14 +364,19 @@ MAX_HEX       = 15_000
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 def _latest_run() -> tuple[int | None, str]:
+    now = time.time()
+    if _LR_CACHE[0] > now:
+        return _LR_CACHE[1], _LR_CACHE[2]
     try:
         with engine.connect() as c:
             row = c.execute(text(
                 "SELECT run_id, snapshot_ts_utc FROM snapshot_run ORDER BY run_id DESC LIMIT 1"
             )).fetchone()
-        return (int(row[0]), str(row[1])) if row else (None, "")
+        result = (int(row[0]), str(row[1])) if row else (None, "")
     except Exception as exc:
         return None, str(exc)
+    _LR_CACHE[0], _LR_CACHE[1], _LR_CACHE[2] = now + 60, result[0], result[1]
+    return result
 
 def _fix_coords(df: pd.DataFrame) -> pd.DataFrame:
     mask = (
@@ -377,6 +429,8 @@ def serve_logo():
 @app.route("/api/data")
 @require_auth
 def api_data():
+    if (hit := _cache_hit("api:data")) is not None:
+        return hit
     run_id, snap_ts = _latest_run()
     if run_id is None:
         return _json({"error": "No data in database", "detail": snap_ts}, 404)
@@ -444,7 +498,7 @@ def api_data():
         for _, r in df_cov.iterrows()
     ]
 
-    return _json({
+    return _cache_json("api:data", {
         "snap_ts": snap_ts[:16] if snap_ts else "",
         "kpis": {
             "total_units":    total,
@@ -462,6 +516,8 @@ def api_data():
 @app.route("/api/ejecutivo")
 @require_auth
 def api_ejecutivo():
+    if (hit := _cache_hit("api:ejecutivo")) is not None:
+        return hit
     run_id, snap_ts = _latest_run()
     if run_id is None:
         return _json({"error": "No data"}, 404)
@@ -545,18 +601,22 @@ def api_ejecutivo():
     zona_grp["sort_key"] = zona_grp.apply(_zona_sort, axis=1)
     zona_grp = zona_grp.sort_values("sort_key").drop(columns="sort_key")
 
-    return _json({
-        "snap_ts":      snap_ts[:16] if snap_ts else "",
-        "resumen":      resumen.to_dict("records"),
-        "cobertura":    {"dentro": dentro, "fuera": fuera},
-        "top_distancia":top_dist.to_dict("records"),
-        "zona":         zona_grp.to_dict("records"),
+    return _cache_json("api:ejecutivo", {
+        "snap_ts":       snap_ts[:16] if snap_ts else "",
+        "resumen":       resumen.to_dict("records"),
+        "cobertura":     {"dentro": dentro, "fuera": fuera},
+        "top_distancia": top_dist.to_dict("records"),
+        "zona":          zona_grp.to_dict("records"),
     })
 
 # ── Route: /api/detalle ───────────────────────────────────────────────────────
 @app.route("/api/detalle")
 @require_auth
 def api_detalle():
+    # Cachear por query string para que los filtros también se cachen
+    _ck = f"api:detalle:{request.query_string.decode()}"
+    if (hit := _cache_hit(_ck)) is not None:
+        return hit
     run_id, snap_ts = _latest_run()
     if run_id is None:
         return _json({"error": "No data"}, 404)
@@ -601,7 +661,7 @@ def api_detalle():
     talleres_list  = sorted(df["taller_cercano_nombre"].dropna().unique().tolist())
     empresas_list  = sorted(df["empresa"].dropna().unique().tolist()) if "empresa" in df.columns else []
 
-    return _json({
+    return _cache_json(_ck, {
         "snap_ts":  snap_ts[:16] if snap_ts else "",
         "total":    len(df),
         "talleres": talleres_list,
@@ -613,6 +673,8 @@ def api_detalle():
 @app.route("/api/tendencia")
 @require_auth
 def api_tendencia():
+    if (hit := _cache_hit("api:tendencia")) is not None:
+        return hit
     try:
         with engine.connect() as conn:
             df = pd.read_sql(text("""
@@ -621,6 +683,7 @@ def api_tendencia():
                 FROM snapshot_unit su
                 JOIN snapshot_run sr ON sr.run_id = su.run_id
                 WHERE su.taller_cercano_nombre IS NOT NULL
+                  AND sr.snapshot_date >= NOW() - INTERVAL '90 days'
             """), conn)
     except Exception:
         return _json({"error": "Error interno al procesar la solicitud"}, 500)
@@ -649,13 +712,15 @@ def api_tendencia():
         for t in talleres if t in pivot.columns
     ]
 
-    return _json({"labels": labels, "series": series, "talleres": talleres})
+    return _cache_json("api:tendencia", {"labels": labels, "series": series, "talleres": talleres})
 
 # ── Route: /api/modelos-sucursal ──────────────────────────────────────────────
 @app.route("/api/modelos-sucursal")
 @require_auth
 def api_modelos_sucursal():
     import traceback as _tb
+    if (hit := _cache_hit("api:modelos-sucursal")) is not None:
+        return hit
     try:
         run_id, _ = _latest_run()
         if run_id is None:
@@ -665,15 +730,10 @@ def api_modelos_sucursal():
         return _json({"error": str(exc), "trace": _tb.format_exc()}, 500)
 
     try:
-        with engine.connect() as conn:
-            existing = pd.read_sql(text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name='snapshot_unit'"
-            ), conn)["column_name"].tolist()
-
-        has_marca   = "marca"       in existing
+        existing    = _get_schema_cols()
+        has_marca   = "marca"        in existing
         has_seg     = "sap_segmento" in existing
-        marca_expr  = "NULLIF(TRIM(COALESCE(marca,'')),'')"       if has_marca else "NULL::text"
+        marca_expr  = "NULLIF(TRIM(COALESCE(marca,'')),'')"        if has_marca else "NULL::text"
         seg_expr    = "NULLIF(TRIM(COALESCE(sap_segmento,'')),'')" if has_seg   else "NULL::text"
 
         logging.info("modelos-sucursal: has_marca=%s has_sap_segmento=%s", has_marca, has_seg)
@@ -742,8 +802,10 @@ def api_modelos_sucursal():
                     row[t] = 0
             rows.append(row)
 
-        return _json({"talleres": talleres, "modelos": modelos,
-                      "marcas": marcas, "segmentos": segmentos, "rows": rows})
+        return _cache_json("api:modelos-sucursal", {
+            "talleres": talleres, "modelos": modelos,
+            "marcas": marcas, "segmentos": segmentos, "rows": rows,
+        })
 
     except Exception as exc:
         logging.exception("modelos-sucursal error")
@@ -872,15 +934,15 @@ def _pais_from_coords(lat, lon) -> str:
 @app.route("/api/estado-flota")
 @require_auth
 def api_estado_flota():
+    # Solo cachear cuando no se aplican filtros de API (el frontend filtra en cliente)
+    _ef_no_filters = not any(request.args.get(k) for k in ["empresa", "estado", "marca", "segmento"])
+    if _ef_no_filters and (hit := _cache_hit("api:estado-flota")) is not None:
+        return hit
     run_id, snap_ts = _latest_run()
     if run_id is None:
         return _json({"error": "No data"}, 404)
 
-    with engine.connect() as conn:
-        existing_cols = pd.read_sql(text(
-            "SELECT column_name FROM information_schema.columns WHERE table_name='snapshot_unit'"
-        ), conn)["column_name"].tolist()
-
+    existing_cols = _get_schema_cols()
     marca_expr = "NULLIF(TRIM(COALESCE(su.marca,'')),'')"        if "marca"        in existing_cols else "NULL::text"
     seg_expr   = "NULLIF(TRIM(COALESCE(su.sap_segmento,'')),'')" if "sap_segmento" in existing_cols else "NULL::text"
 
@@ -989,7 +1051,7 @@ def api_estado_flota():
     marcas     = sorted({r["marca"]    for r in rows if r["marca"]})
     segmentos  = sorted({r["segmento"] for r in rows if r["segmento"]})
 
-    return _json({
+    payload = {
         "snap_ts": snap_ts[:16] if snap_ts else "",
         "kpis": {
             "con_can":    con_can,
@@ -1002,7 +1064,10 @@ def api_estado_flota():
         "marcas":    marcas,
         "segmentos": segmentos,
         "rows":      rows,
-    })
+    }
+    if _ef_no_filters:
+        return _cache_json("api:estado-flota", payload)
+    return _json(payload)
 
 # ── Route: /api/export/<tipo> (CSV download) ──────────────────────────────────
 @app.route("/api/export/<tipo>")

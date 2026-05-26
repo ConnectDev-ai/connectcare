@@ -1277,11 +1277,15 @@ function _preloadAllPages() {
         ['detalle',      () => loadDetalle({})],
     ];
     pages.forEach(([name, fn], i) => {
-        if (!_loaded[name]) {
-            _loaded[name] = true;
-            // Escalonar las llamadas para no saturar el servidor
-            setTimeout(fn, (i + 1) * 400);
-        }
+        // IMPORTANTE: NO marcar _loaded[name] = true aquí.
+        // Si el usuario navega al tab antes de que dispare el setTimeout,
+        // setPage() lo cargará inmediatamente y el timeout se convierte en no-op.
+        setTimeout(() => {
+            if (!_loaded[name]) {
+                _loaded[name] = true;
+                fn();
+            }
+        }, (i + 1) * 150);  // 150ms en vez de 400ms — 4 tabs listos en 600ms
     });
 }
 
@@ -3001,6 +3005,8 @@ document.addEventListener('DOMContentLoaded', function() {
 let _tdActiveTicket  = null;
 let _tdCurrentUnit   = null;
 window._tdTalleres   = null;
+let _tkOpenList      = [];   // cache de tickets abiertos para openTicketFromList()
+let _tkOverdueList   = [];   // cache de tickets vencidos para openOverdueTicket()
 
 async function _ensureTdTalleres() {
     if (window._tdTalleres) return;
@@ -3042,6 +3048,79 @@ function closeTicketDrawer() {
     document.body.style.overflow = '';
     _tdActiveTicket = null;
     _tdCurrentUnit  = null;
+}
+
+// ── Núcleo: abre el drawer para un ticket específico por objeto ticket ────────
+async function _openDrawerForTicket(ticket) {
+    // Construir contexto mínimo de unidad desde los campos del ticket
+    _tdCurrentUnit = {
+        unit_id:       ticket.unit_id,
+        patente:       ticket.patente || ticket.unit_id,
+        empresa:       ticket.empresa || '',
+        vin:           ticket.vin     || '',
+        pais:          '',
+        can_odometer:  null,
+        can_horometer: null,
+        estado:        'SIN_DATOS',
+        fallas_count:  0,
+        modelo:        null,
+        taller:        ticket.assigned_to || '',
+    };
+    document.getElementById('td-backdrop').style.display = 'block';
+    document.getElementById('td-drawer').style.display   = 'block';
+    document.body.style.overflow = 'hidden';
+    _renderTdUnit(_tdCurrentUnit);
+    document.getElementById('td-ticket').innerHTML =
+        '<div style="color:rgba(229,226,225,0.4);font-size:12px;padding:4px 0">Cargando…</div>';
+    document.getElementById('td-notes').innerHTML = '';
+    document.getElementById('td-mant').innerHTML  = '';
+    await _ensureTdTalleres();
+    try {
+        const r    = await authFetch('/api/tickets/' + ticket.id);
+        const full = await r.json();
+        if (full.error) throw new Error(full.error);
+        _tdActiveTicket = full;
+        _renderTdTicket(full, 0);
+        _renderTdNotes(full);
+        _loadMantencionHistory(full.unit_id);
+    } catch(e) {
+        document.getElementById('td-ticket').innerHTML =
+            `<div style="color:#f87171;font-size:11px">Error cargando ticket: ${e.message}</div>`;
+    }
+}
+
+// Desde tabla "Tickets Abiertos"
+async function openTicketFromList(idx) {
+    const t = _tkOpenList[idx];
+    if (t) await _openDrawerForTicket(t);
+}
+
+// Desde tabla "Tickets Vencidos"
+async function openOverdueTicket(idx) {
+    const t = _tkOverdueList[idx];
+    if (t) await _openDrawerForTicket(t);
+}
+
+// Recarga el ticket activo por ID (usado por acciones del drawer)
+async function _reloadActiveTicket() {
+    if (_tdActiveTicket && _tdActiveTicket.id) {
+        try {
+            const r    = await authFetch('/api/tickets/' + _tdActiveTicket.id);
+            const full = await r.json();
+            _tdActiveTicket = full;
+            _renderTdTicket(full, 0);
+            _renderTdNotes(full);
+            _loadMantencionHistory(full.unit_id);
+        } catch(e) {
+            document.getElementById('td-ticket').innerHTML =
+                `<div style="color:#f87171;font-size:11px">Error: ${e.message}</div>`;
+        }
+        // Refrescar panel de tickets si está visible
+        const panel = document.getElementById('ef-tickets-panel');
+        if (panel && panel.style.display !== 'none') loadTicketKpis();
+    } else if (_tdCurrentUnit) {
+        _loadTdTickets(_tdCurrentUnit.unit_id);
+    }
 }
 
 function _tdBadge(label, bg, color, border) {
@@ -3351,7 +3430,7 @@ async function _tdSetStatus(nuevo) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
-        await _loadTdTickets(_tdCurrentUnit.unit_id);
+        await _reloadActiveTicket();
     } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -3364,7 +3443,7 @@ async function _tdSaveAssign() {
             body: JSON.stringify({assigned_to: val || null}),
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        await _loadTdTickets(_tdCurrentUnit.unit_id);
+        await _reloadActiveTicket();
     } catch(e) { alert('Error: ' + e.message); }
 }
 
@@ -3382,7 +3461,7 @@ async function _tdAddNote() {
         });
         if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'HTTP ' + res.status); }
         if (inp) inp.value = '';
-        await _loadTdTickets(_tdCurrentUnit.unit_id);
+        await _reloadActiveTicket();
     } catch(e) {
         alert('Error al agregar nota: ' + e.message);
         if (btn) { btn.disabled = false; }
@@ -3444,6 +3523,7 @@ function renderOpenTickets(all) {
                         if (pa !== pb) return pa - pb;
                         return new Date(a.created_at) - new Date(b.created_at);
                     });
+    _tkOpenList = open;  // guardamos para openTicketFromList(idx)
     const el    = document.getElementById('tk-open-list');
     const cntEl = document.getElementById('tk-open-count');
     if (cntEl) cntEl.textContent = open.length > 0 ? `(${open.length})` : '';
@@ -3457,16 +3537,16 @@ function renderOpenTickets(all) {
     el.innerHTML = `<table class="data-table">
         <thead><tr>
             <th>#</th><th>Patente</th><th>Empresa</th>
-            <th>Estado</th><th>Prioridad</th><th>Asignado a</th><th>Días háb.</th><th>Descripción</th>
+            <th>Estado</th><th>Prioridad</th><th>Asignado a</th><th>Días háb.</th><th>Creado</th>
         </tr></thead>
-        <tbody>${open.map(t => {
+        <tbody>${open.map((t, i) => {
             const stLabel = t.es_vencido ? 'Vencido' : (t.estado === 'en_proceso' ? 'En proceso' : 'Pendiente');
             const stKey   = t.es_vencido ? 'vencido' : t.estado;
             const stColor = ST_COLOR[stKey] || '#e5e2e1';
             const prColor = PR_COLOR[t.prioridad] || '#e5e2e1';
             const dias    = _businessDaysSince(t.created_at);
-            const desc    = (t.descripcion || '').substring(0, 60) + ((t.descripcion||'').length > 60 ? '…' : '');
-            return `<tr>
+            const fechaCreado = _tdFmtDate(t.created_at);
+            return `<tr onclick="openTicketFromList(${i})" style="cursor:pointer" title="Ver detalle del ticket">
                 <td><span style="font-family:monospace;color:#f2be8c">#${t.id}</span></td>
                 <td style="font-weight:600">${escHtml(t.patente || t.unit_id || '—')}</td>
                 <td>${escHtml(t.empresa || '—')}</td>
@@ -3474,7 +3554,7 @@ function renderOpenTickets(all) {
                 <td><span style="font-size:10px;font-weight:700;color:${prColor}">${escHtml(t.prioridad || '—')}</span></td>
                 <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${escHtml(t.assigned_to || 'Sin asignar')}</td>
                 <td><span style="${dias > 5 ? 'color:#f87171;font-weight:700' : ''}">${dias}</span></td>
-                <td style="font-size:11px;color:rgba(229,226,225,0.55);max-width:200px;overflow:hidden;text-overflow:ellipsis">${escHtml(desc || '—')}</td>
+                <td style="font-size:11px;color:rgba(229,226,225,0.55)">${fechaCreado}</td>
             </tr>`;
         }).join('')}</tbody>
     </table>`;
@@ -3532,15 +3612,16 @@ function renderTicketKpis(data) {
     const ovEl   = document.getElementById('tk-overdue-list');
     const ovCnt  = document.getElementById('tk-overdue-count');
     if (ovCnt) ovCnt.textContent = data.overdue && data.overdue.length > 0 ? `(${data.overdue.length})` : '';
+    _tkOverdueList = data.overdue || [];   // guardamos para openOverdueTicket(idx)
     if (ovEl) {
-        if (!data.overdue || data.overdue.length === 0) {
+        if (_tkOverdueList.length === 0) {
             ovEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets vencidos ✓</div>';
         } else {
             ovEl.innerHTML = `<table class="data-table">
                 <thead><tr><th>#</th><th>Patente</th><th>Empresa</th><th>Asignado a</th><th>Estado</th><th>Días háb.</th><th>Desde</th></tr></thead>
-                <tbody>${data.overdue.map(o => `
-                <tr>
-                    <td><span style="font-family:monospace;color:#f2be8c">#${o.id}</span></td>
+                <tbody>${_tkOverdueList.map((o, i) => `
+                <tr onclick="openOverdueTicket(${i})" style="cursor:pointer" title="Ver y gestionar ticket vencido">
+                    <td><span style="font-family:monospace;color:#f87171">#${o.id}</span></td>
                     <td style="font-weight:600">${escHtml(o.patente||o.unit_id||'—')}</td>
                     <td>${escHtml(o.empresa||'—')}</td>
                     <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${escHtml(o.assigned_to||'—')}</td>

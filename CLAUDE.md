@@ -35,11 +35,26 @@ streamlit run viewer_osm.py    # folium/OpenStreetMap (no Mapbox)
 cd geo-workshop-db
 docker compose up -d
 ```
+Default local DB: `postgresql+psycopg://geo_user:geo_password@localhost:5432/geocobertura` — matches `web_app.py`'s fallback `DATABASE_URL`.
 
 ### Install dependencies
 ```bash
 pip install -r Scripts/requirements.txt
 ```
+Python 3.11 is used in CI (GitHub Actions). The codebase uses `zoneinfo` (3.9+) with a `try/except` fallback.
+
+### Build SAP ERP cache (run once, or when VINs change)
+```bash
+cd Scripts
+python build_sap_cache.py
+```
+Requires `ERP_SUBSCRIPTION_KEY` in `.env`. Writes `Data/sap_vin_cache.json`. The main pipeline (`app.py`) reads this cache but never calls SAP directly — run this script separately first, then re-run `app.py` to pick up the enriched data.
+
+### Generate architecture document
+```bash
+python generar_informe.py
+```
+Generates `Geoworkshop_Arquitectura.docx` in the project root using `python-docx` + `matplotlib`. Run from the project root.
 
 ### Trigger pipeline manually via GitHub Actions
 Use the "Run workflow" button on the `Daily Coverage Pipeline` action (workflow_dispatch is enabled).
@@ -70,6 +85,7 @@ There is no test suite. This is a data pipeline + API project with no automated 
 | `GEOTAB_USERNAME` | Geotab API username (shared across all databases) |
 | `GEOTAB_PASSWORD` | Geotab API password |
 | `GEOTAB_SERVER` | Geotab API host (default `my.geotab.com`) |
+| `ERP_SUBSCRIPTION_KEY` | Kaufmann SAP API Gateway subscription key — used by `build_sap_cache.py` only |
 | `SUPABASE_URL` | Supabase project URL for JWT validation via `/auth/v1/user` |
 | `SUPABASE_ANON_KEY` | Supabase anon key sent as `apikey` header during token validation |
 | `SUPABASE_JWT_SECRET` | Last-resort local HS256 JWT verification (fallback only) |
@@ -86,8 +102,9 @@ There is no test suite. This is a data pipeline + API project with no automated 
 ```
 Copiloto API ──┐
                ├──→ Scripts/app.py  ←  Data/master_Flota.xlsx + Data/talleres.xlsx
-Geotab API  ──┘         ↓
-                PostgreSQL/PostGIS (Neon in production, local Docker for dev)
+Geotab API  ──┘         ↓                  ↑ Data/sap_vin_cache.json
+                PostgreSQL/PostGIS          (built separately by build_sap_cache.py ← SAP ERP)
+                (Neon in production, local Docker for dev)
                          ↓
 Scripts/web_app.py  (Flask REST API on /api/*)          Scripts/viewer_hex.py
          ↓                                               (connects to DB directly,
@@ -98,21 +115,24 @@ Geotab is an optional second vehicle source — credentials checked at startup; 
 
 ### Key Files
 
-- **`Scripts/app.py`** — Daily pipeline. Authenticates with Copiloto, fetches vehicle records CSV, enriches with fleet/workshop master data, runs vectorized Haversine distance calculations, writes to the four DB tables, and outputs CSVs to `Scripts/out/` (gitignored, auto-created).
+- **`Scripts/app.py`** — Daily pipeline. Authenticates with Copiloto, fetches vehicle records CSV, enriches with fleet/workshop master data and SAP cache, runs vectorized Haversine distance calculations, writes to the four DB tables, and outputs CSVs to `Scripts/out/` (gitignored, auto-created).
 - **`Scripts/web_app.py`** — Flask API. Reads only from DB (never calls Copiloto). All routes resolve the latest snapshot via `_latest_run()` before querying. Serves `connect_talleres.html` at `/`.
+- **`Scripts/build_sap_cache.py`** — One-shot utility. Reads VINs from `master_Flota.xlsx`, calls the Kaufmann SAP ERP API for each, and writes `Data/sap_vin_cache.json`. Run manually when the fleet changes. `app.py` reads this cache but never calls SAP directly.
 - **`Scripts/viewer_hex.py`** — Primary Streamlit UI ("Fleet Intelligence"). Dark theme, pydeck hexagon layers, Material Symbols icons. Connects to the DB via SQLAlchemy directly — it does **not** go through the Flask API.
 - **`Scripts/templates/connect_talleres.html`** — Standalone SPA with no build step. Uses MapLibre GL + deck.gl + Chart.js + Tailwind CSS (all CDN). Consumes the same `/api/*` endpoints.
 - **`api/index.py`** — One-file Vercel shim: inserts `Scripts/` into `sys.path` and re-exports the Flask `app` object as a serverless function.
+- **`generar_informe.py`** — Standalone utility (project root) that generates `Geoworkshop_Arquitectura.docx`. Not part of the pipeline.
+- **`Scripts/new_viewer_hex.py`** — Empty stub (1 line). Not yet implemented.
 
 ### Database Schema
 
 The `geo-workshop-db/init/001_init.sql` only enables PostGIS. Schema is created on first `app.py` run via `run_migrations()`. Four snapshot tables per pipeline run:
 
 - `snapshot_run` — run metadata (run_id, timestamp, unit count, config params)
-- `snapshot_unit` — one row per vehicle per run (VIN, coords, empresa, taller assignment, OBD odometer/horometer)
+- `snapshot_unit` — one row per vehicle per run (VIN, coords, empresa, taller assignment, OBD odometer/horometer, SAP fields)
 - `snapshot_taller_overlap` — count of all units within radius per taller
 - `snapshot_taller_exclusive` — nearest-taller assignment counts only
-- `dim_taller` — static workshop dimension (coordinates, zone, PostGIS geometry) — upserted on every run
+- `dim_taller` — static workshop dimension (coordinates, zone, PostGIS geometry) — upserted on every run; **all rows are set `activo=FALSE` first**, then re-upserted from current `talleres.xlsx` so removed workshops become inactive automatically
 
 Three maintenance tables created by `_ensure_ticket_tables()` at `web_app.py` startup (idempotent):
 
@@ -133,7 +153,7 @@ Three maintenance tables created by `_ensure_ticket_tables()` at `web_app.py` st
 | `GET /api/modelos-sucursal` | Vehicle model matrix by workshop |
 | `GET /api/radio-search` | Ad-hoc radius search: `?lat=&lon=&radius_km=` — vectorized Haversine, no PostGIS |
 | `GET /api/estado-flota` | Maintenance state from OBD odometer vs brand thresholds, merged with DTC faults |
-| `GET /api/export/<tipo>` | Full CSV download: `tipo` must be `units`, `detalle`, or `cobertura` — use instead of `/api/detalle` for complete data |
+| `GET /api/export/<tipo>` | Full CSV download: `tipo` must be `units`, `detalle`, `cobertura`, or `zonas` — use instead of `/api/detalle` for complete data |
 | `GET /api/talleres` | List of all active talleres from `dim_taller` |
 | `GET/POST /api/tickets` | List tickets (supports `?unit_id=`, `?estado=vencido`); create a new ticket |
 | `GET/PATCH /api/tickets/<id>` | Get or update a single ticket |
@@ -141,13 +161,21 @@ Three maintenance tables created by `_ensure_ticket_tables()` at `web_app.py` st
 | `GET /api/tickets/kpis` | Aggregate ticket KPIs (counts by estado, vencidos) |
 | `GET/POST /api/maintenance-records` | List or create maintenance completion records |
 
-All routes require `Authorization: Bearer <supabase_token>` in production. Rate limit: 300 req/hour globally, 10/min on `/api/export`.
+All routes require `Authorization: Bearer <supabase_token>` in production. Rate limit: 300 req/hour globally, 10/min on `/api/export`. `flask_limiter` degrades gracefully to a no-op if not installed.
 
 ### Key Implementation Patterns
 
-**Adding a new Flask route**: Follow the pattern of every existing route — call `_latest_run()` first, query with `engine.connect()` and `pd.read_sql()`, return via `_json()`. The `_SafeEnc` custom JSON encoder (in `web_app.py`) handles `numpy` integers/floats and `pd.Timestamp` automatically; no manual casting needed for pandas results.
+**Adding a new Flask route**: Follow the pattern of every existing route — check `_cache_hit(key)` first, call `_latest_run()`, query with `engine.connect()` and `pd.read_sql()`, return via `_cache_json(key, data)`. The `_SafeEnc` custom JSON encoder handles `numpy` integers/floats and `pd.Timestamp` automatically; `_clean_nans()` strips `float('nan')` so JSON never emits bare `NaN`. No manual casting needed for pandas results.
 
-**Unit enrichment (app.py)**: `enrich_units_with_master()` does a two-pass join — first by VIN against `unit_id`, then by IMEI for units that didn't match. The enriched `Empresa` column (capital E, from master) overwrites the lowercase `empresa` from Copiloto.
+**Response cache** (`_RESP_CACHE`): All heavy API responses are cached in memory for 5 minutes (`_RESP_CACHE_TTL`). Data changes at most once a day. Use `_cache_hit(key)` to check and `_cache_json(key, data)` to store + respond. For endpoints with query-string filters, use `f"api:endpoint:{request.query_string.decode()}"` as key. The cache is never explicitly invalidated — it expires naturally.
+
+**Schema columns cache** (`_get_schema_cols()`): Replaces per-request `information_schema.columns` queries. Cached permanently for the process lifetime (columns don't change at runtime). Used by `api_estado_flota` and `api_modelos_sucursal`.
+
+**`_latest_run()` cache** (`_LR_CACHE`): Cached for 60 seconds to avoid one extra DB round-trip per request.
+
+**`unit_id` primary key**: When `PREFER_VIN=1` (default), `unit_id` equals the VIN. When VIN is absent, it falls back to IMEI. This means `unit_id` is not always a VIN — always check which mode is active when interpreting the field. The `vin` column is also stored separately.
+
+**Unit enrichment (app.py)**: Three enrichment passes run in order: (1) `enrich_units_with_master()` — two-pass join by VIN then IMEI against `master_Flota.xlsx`; (2) `enrich_units_with_sap()` — applies the pre-built SAP cache from `Data/sap_vin_cache.json`. The enriched `Empresa` column (capital E, from master) overwrites the lowercase `empresa` from Copiloto.
 
 **Schema migrations**: `run_migrations()` in `app.py` runs `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements on every pipeline execution. Add new columns there — it is safe to re-run.
 
@@ -161,7 +189,9 @@ All routes require `Authorization: Bearer <supabase_token>` in production. Rate 
 
 **DTC fault data**: `web_app.py` loads the most recent `Data/reporte_fallas_*.xlsx` at module startup into `_FALLAS_BY_VIN` (keyed by VIN). Required columns: `vin`, `affected_parameter`, `PRIORIDAD`. Only the lexicographically last file is loaded. **Requires a server restart to pick up a new file.**
 
-**VIN decode cache**: `Data/vin_cache.json` persists WMI/NHTSA decode results across pipeline runs (keyed by the first 8 chars of each VIN). Loaded at the start of `fetch_geotab_units()` and saved after all databases are processed. Delete this file to force a full re-decode.
+**VIN decode cache**: `Data/vin_cache.json` persists WMI/NHTSA decode results across pipeline runs (keyed by the first 8 chars of each VIN). Loaded at the start of `fetch_geotab_units()` and saved after all databases are processed. NHTSA lookup only runs for North American VINs (first char `1`, `2`, or `3`); `_WMI_BRANDS` dict in `app.py` covers other known WMIs as fallback. Delete `vin_cache.json` to force a full re-decode.
+
+**SAP cache**: `Data/sap_vin_cache.json` stores Kaufmann ERP data keyed by VIN (marca, modelo, segmento, automotora, etc.). Built by `build_sap_cache.py`; consumed read-only by `app.py`. The file is untracked locally but is auto-committed to the repo every Monday at 6 AM UTC by the `SAP Vehicle Cache Builder` GH Actions workflow (`sap_cache.yml`). Delete the file to force a full refresh locally.
 
 **Supabase token verification** (`_verify_supabase_token`): three-tier fallback — (1) live call to `SUPABASE_URL/auth/v1/user`, (2) JWT decode without signature check (validates `exp`, `aud`, `role` claims), (3) local HS256 verify with `SUPABASE_JWT_SECRET`. Valid tokens are cached for 5 minutes.
 
@@ -169,17 +199,39 @@ All routes require `Authorization: Bearer <supabase_token>` in production. Rate 
 
 `Scripts/config.toml` defines the Streamlit dark theme. For Streamlit to pick it up, it must be at `.streamlit/config.toml` relative to the working directory when `streamlit run` is invoked (i.e., `Scripts/.streamlit/config.toml`).
 
+### Frontend SPA (connect_talleres.html)
+
+The HTML file is a single-page app with six named panels navigated via `setPage(name)`:
+
+| Panel | API Calls | Description |
+|---|---|---|
+| `mapa` (default) | `/api/data`, `/api/radio-search` | Interactive deck.gl map with coverage circles |
+| `ejecutivo` | `/api/ejecutivo`, `/api/modelos-sucursal` | KPI cards, taller table, model matrix |
+| `detalle` | `/api/detalle` | Filterable unit table (taller, empresa, free-text, max dist) |
+| `tendencia` | `/api/tendencia` | Weekly trend chart + pivot table |
+| `reportes` | `/api/export/*` | CSV download buttons |
+| `estado-flota` | `/api/estado-flota` | OBD maintenance state + DTC faults |
+
+**`authFetch(url, opts)`** — all API calls use this wrapper (bottom of the HTML). It reads the Supabase session token from memory (`_activeToken`) or from `_sbGeo.auth.getSession()`, injects `Authorization: Bearer <token>`, and redirects to the login overlay on a 401.
+
+**Supabase credentials in HTML**: The Supabase project URL and anon (publishable) key are hardcoded as `_SUPABASE_URL` / `_SUPABASE_ANON` near line 2869. This is intentional — anon keys are public. The `_sbGeo` Supabase client is for client-side auth only; the backend validates tokens independently.
+
 ### Vercel Deployment
 
-`vercel.json` routes all traffic to `api/index.py`, which is a one-file shim that adds `Scripts/` to `sys.path` and re-exports the Flask `app` object as a Vercel serverless function. No build step needed — the Flask app runs as-is. Environment variables must be set in the Vercel project dashboard (same names as the `.env` table above).
+`vercel.json` routes all traffic (`/(.*) → /api/index`) to `api/index.py`, which is a one-file shim that adds `Scripts/` to `sys.path` and re-exports the Flask `app` object as a serverless function. No build step needed — the Flask app runs as-is. Environment variables must be set in the Vercel project dashboard (same names as the `.env` table above).
 
 ### Automation
 
-GitHub Actions workflow `.github/workflows/daily_pipeline.yml` runs `app.py` daily at 2 PM UTC (11 AM Santiago). Copiloto credentials, Geotab credentials, and `PGPASSWORD` are repository secrets; Neon host/db/user and Geotab database names are hardcoded in the workflow YAML.
+Two GitHub Actions workflows:
+
+- **`daily_pipeline.yml`** — runs `app.py` daily at 2 PM UTC (11 AM Santiago). Copiloto credentials, Geotab credentials, and `PGPASSWORD` are repository secrets; Neon host/db/user and Geotab database names are hardcoded in the workflow YAML.
+- **`sap_cache.yml`** — runs `build_sap_cache.py` every Monday at 6 AM UTC (3 AM Santiago) and commits the updated `Data/sap_vin_cache.json` back to the repo. Also triggerable manually via `workflow_dispatch`.
 
 ## Data Files
 
 - **`Data/master_Flota.xlsx`** — Fleet master: maps IMEI → Empresa, Marca, Modelo, Patente, VIN. Updated manually.
 - **`Data/talleres.xlsx`** — Workshop master: name, coordinates, zone. Expected columns: `ID`, `Sucursal Kaufmann`, `Latitud`, `Longitud`, `Zona`.
 - **`Data/reporte_fallas_*.xlsx`** — DTC fault report; only the most recently named file is loaded. Must have columns: `vin`, `affected_parameter`, `PRIORIDAD`.
+- **`Data/sap_vin_cache.json`** — SAP ERP enrichment cache keyed by VIN. Generated locally by `build_sap_cache.py` or pulled from the repo after the weekly GH Actions run.
+- **`Data/vin_cache.json`** — WMI/NHTSA VIN decode cache keyed by first 8 chars of VIN. Generated during Geotab sync.
 - **`Scripts/out/`** — CSV snapshots from each pipeline run (gitignored, created automatically).
