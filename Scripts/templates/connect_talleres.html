@@ -913,7 +913,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                 </div>
 
                 <div id="det-loading" class="loading-state animate-pulse">Cargando datos...</div>
-                <div id="det-table" class="section-card overflow-x-auto" style="display:none; padding:0;"></div>
+                <div id="det-table" class="section-card" style="display:none; padding:0; overflow:hidden;"></div>
             </div>
         </div><!-- end page-detalle -->
 
@@ -2372,17 +2372,25 @@ function renderDetalle(data) {
         (total > 500 ? ' — descarga el CSV para ver todas' : '');
 
     const cols = [
-        { key: 'unit_id',                   label: 'ID / VIN' },
-        { key: 'empresa',                   label: 'Empresa' },
-        { key: 'patente',                   label: 'Patente' },
-        { key: 'modelo',                    label: 'Modelo' },
-        { key: 'taller_cercano_nombre',     label: 'Taller asignado' },
+        { key: 'unit_id',                     label: 'ID / VIN' },
+        { key: 'empresa',                     label: 'Empresa' },
+        { key: 'patente',                     label: 'Patente' },
+        { key: 'modelo',                      label: 'Modelo' },
+        { key: 'taller_cercano_nombre',       label: 'Taller asignado' },
         { key: 'distancia_taller_cercano_km', label: 'Dist. (km)', fmt: v => fmtDec(v) },
-        { key: 'dentro_radio_taller',       label: 'Dentro radio', fmt: v =>
+        { key: 'dentro_radio_taller',         label: 'Dentro radio', fmt: v =>
             `<span style="color:${v ? '#4ade80' : '#f87171'};font-weight:600">${v ? '✓' : '✗'}</span>` },
-        { key: 'radio_taller_km',           label: 'Radio (km)',  fmt: v => fmtDec(v) },
+        { key: 'radio_taller_km',             label: 'Radio (km)', fmt: v => fmtDec(v) },
     ];
-    document.getElementById('det-table').innerHTML = buildTable(cols, data.rows || [], { raw: true });
+
+    const tableHtml = buildTable(cols, data.rows || [], { raw: true, stickyHeader: true });
+    document.getElementById('det-table').innerHTML = `
+        <div style="
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 330px);
+            min-height: 280px;
+        ">${tableHtml}</div>`;
 }
 
 function applyDetalleFilter() {
@@ -2838,9 +2846,15 @@ function downloadEstadoFlotaCSV() {
 //  SHARED: Table builder
 // ═══════════════════════════════════════════════════════
 function buildTable(cols, rows, opts = {}) {
-    const ths = cols.map(c =>
-        `<th>${c.label}</th>`
-    ).join('');
+    // opts.stickyHeader: true → thead sticky + fondo sólido en cada <th>
+    const thStyle = opts.stickyHeader
+        ? ' style="background:#0e0e0e;box-shadow:0 1px 0 rgba(53,53,52,0.6);"'
+        : '';
+    const theadAttr = opts.stickyHeader
+        ? ' style="position:sticky;top:0;z-index:3;"'
+        : '';
+
+    const ths = cols.map(c => `<th${thStyle}>${c.label}</th>`).join('');
 
     const trs = rows.map(row => {
         const tds = cols.map(c => {
@@ -2852,7 +2866,7 @@ function buildTable(cols, rows, opts = {}) {
         return `<tr>${tds}</tr>`;
     }).join('');
 
-    return `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    return `<table class="data-table"><thead${theadAttr}><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 function escHtml(s) {
