@@ -1080,7 +1080,7 @@ select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !im
                 </div>
 
                 <div id="ef-loading" class="loading-state animate-pulse">Cargando datos...</div>
-                <div id="ef-table" class="section-card overflow-x-auto" style="display:none; padding:0;"></div>
+                <div id="ef-table" class="section-card" style="display:none; padding:0; overflow:hidden;"></div>
                 <div class="mt-4 section-card" style="display:none" id="ef-legend">
                     <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-2">Umbrales por marca (km)</div>
                     <div id="ef-legend-body" class="flex flex-wrap gap-2"></div>
@@ -2666,81 +2666,97 @@ function loadEstadoFlota() {
 }
 
 function renderEstadoFlotaTable(rows) {
+    const el = document.getElementById('ef-table');
     if (!rows || rows.length === 0) {
-        document.getElementById('ef-table').innerHTML =
-            '<div class="p-8 text-center text-xs text-[#e5e2e1]/30">Sin datos para los filtros seleccionados</div>';
-        document.getElementById('ef-table').style.display = 'block';
+        el.innerHTML = '<div class="p-8 text-center text-xs text-[#e5e2e1]/30">Sin datos para los filtros seleccionados</div>';
+        el.style.display = 'block';
         document.getElementById('ef-info').textContent = '0 unidades';
         return;
     }
 
     const EF_PAIS_FLAG = { 'Chile': '🇨🇱', 'Colombia': '🇨🇴', 'Peru': '🇵🇪', 'Paraguay': '🇵🇾' };
     window._efRenderedRows = rows;
-    const html = `<table class="data-table">
-        <thead><tr>
-            <th>Estado</th>
-            <th>Fallas DTC</th>
-            <th>País</th>
-            <th>Patente</th>
-            <th>VIN</th>
-            <th>Empresa</th>
-            <th>Marca</th>
-            <th>Segmento</th>
-            <th>Modelo</th>
-            <th>Taller más cercano</th>
-            <th>Odómetro (km)</th>
-            <th>Horómetro (h)</th>
-            <th>Próx. servicio (km)</th>
-            <th>Km restantes</th>
-            <th>Umbral marca</th>
-        </tr></thead>
-        <tbody>
-        ${rows.map((r, idx) => {
-            const cfg = EF_ESTADO_CFG[r.estado] || EF_ESTADO_CFG.SIN_DATOS;
-            const badge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.badge}">${cfg.label}</span>`;
-            const odo  = r.can_odometer  != null ? fmt(r.can_odometer)  + ' km' : '—';
-            const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h' : '—';
-            const prox = r.proximo_servicio_km != null ? fmt(r.proximo_servicio_km) + ' km' : '—';
-            let kmRest = '—';
-            if (r.km_restantes != null) {
-                const cls = r.estado === 'CRITICO' ? 'text-red-400 font-bold' :
-                            r.estado === 'ATENCION' ? 'text-yellow-400 font-bold' : 'text-green-400';
-                kmRest = `<span class="${cls}">${fmt(r.km_restantes)} km</span>`;
-            }
-            const umbral = r.umbral_km != null ? `${fmt(r.umbral_km)} km<br><span class="text-[10px] text-[#e5e2e1]/30">${r.marca_detectada}</span>` : '—';
-            let fallaCell = '<span class="text-[#e5e2e1]/25">—</span>';
-            if (r.fallas_count > 0) {
-                const prioBadge = r.prioridad_falla === 'Urgente'
-                    ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">Urgente</span>`
-                    : `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Seguimiento</span>`;
-                const desc = r.descripcion_falla ? `<div class="text-[10px] text-[#e5e2e1]/45 mt-0.5" style="white-space:normal;max-width:180px">${escHtml(r.descripcion_falla)}</div>` : '';
-                fallaCell = `<div>${prioBadge} <span class="text-[10px] text-[#e5e2e1]/50 ml-1">${r.fallas_count}</span>${desc}</div>`;
-            }
-            const paisFlag = EF_PAIS_FLAG[r.pais] || '';
-            const paisCell = r.pais ? `<span class="whitespace-nowrap">${paisFlag} ${escHtml(r.pais)}</span>` : '—';
-            return `<tr onclick="openTicketDrawer(${idx})" style="cursor:pointer" title="Ver gestión">
-                <td>${badge}</td>
-                <td>${fallaCell}</td>
-                <td class="text-[12px]">${paisCell}</td>
-                <td class="font-mono">${escHtml(r.patente || '—')}</td>
-                <td class="font-mono text-[11px] text-[#e5e2e1]/60">${escHtml(r.vin || '—')}</td>
-                <td>${escHtml(r.empresa || '—')}</td>
-                <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.marca || '—')}</td>
-                <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.segmento || '—')}</td>
-                <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
-                <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
-                <td class="font-mono text-right">${odo}</td>
-                <td class="font-mono text-right">${hora}</td>
-                <td class="font-mono text-right">${prox}</td>
-                <td class="font-mono text-right">${kmRest}</td>
-                <td class="text-[11px] text-center">${umbral}</td>
-            </tr>`;
-        }).join('')}
-        </tbody>
-    </table>`;
 
-    document.getElementById('ef-table').innerHTML = html;
-    document.getElementById('ef-table').style.display = 'block';
+    // Tabla con scroll vertical + horizontal y headers pegados al tope
+    const tableRows = rows.map((r, idx) => {
+        const cfg  = EF_ESTADO_CFG[r.estado] || EF_ESTADO_CFG.SIN_DATOS;
+        const badge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.badge}">${cfg.label}</span>`;
+        const odo  = r.can_odometer  != null ? fmt(r.can_odometer)  + ' km' : '—';
+        const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h' : '—';
+        const prox = r.proximo_servicio_km != null ? fmt(r.proximo_servicio_km) + ' km' : '—';
+        let kmRest = '—';
+        if (r.km_restantes != null) {
+            const cls = r.estado === 'CRITICO' ? 'text-red-400 font-bold' :
+                        r.estado === 'ATENCION' ? 'text-yellow-400 font-bold' : 'text-green-400';
+            kmRest = `<span class="${cls}">${fmt(r.km_restantes)} km</span>`;
+        }
+        const umbral = r.umbral_km != null
+            ? `${fmt(r.umbral_km)} km<br><span class="text-[10px] text-[#e5e2e1]/30">${r.marca_detectada}</span>`
+            : '—';
+        let fallaCell = '<span class="text-[#e5e2e1]/25">—</span>';
+        if (r.fallas_count > 0) {
+            const prioBadge = r.prioridad_falla === 'Urgente'
+                ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">Urgente</span>`
+                : `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Seguimiento</span>`;
+            const desc = r.descripcion_falla
+                ? `<div class="text-[10px] text-[#e5e2e1]/45 mt-0.5" style="white-space:normal;max-width:180px">${escHtml(r.descripcion_falla)}</div>`
+                : '';
+            fallaCell = `<div>${prioBadge} <span class="text-[10px] text-[#e5e2e1]/50 ml-1">${r.fallas_count}</span>${desc}</div>`;
+        }
+        const paisFlag = EF_PAIS_FLAG[r.pais] || '';
+        const paisCell = r.pais ? `<span class="whitespace-nowrap">${paisFlag} ${escHtml(r.pais)}</span>` : '—';
+        return `<tr onclick="openTicketDrawer(${idx})" style="cursor:pointer" title="Ver gestión">
+            <td>${badge}</td>
+            <td>${fallaCell}</td>
+            <td class="text-[12px]">${paisCell}</td>
+            <td class="font-mono">${escHtml(r.patente || '—')}</td>
+            <td class="font-mono text-[11px] text-[#e5e2e1]/60">${escHtml(r.vin || '—')}</td>
+            <td>${escHtml(r.empresa || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.marca || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.segmento || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
+            <td class="font-mono text-right">${odo}</td>
+            <td class="font-mono text-right">${hora}</td>
+            <td class="font-mono text-right">${prox}</td>
+            <td class="font-mono text-right">${kmRest}</td>
+            <td class="text-[11px] text-center">${umbral}</td>
+        </tr>`;
+    }).join('');
+
+    // Contenedor con scroll doble: max-height deja visible la UI de filtros + KPIs,
+    // overflow-x para columnas anchas, headers sticky con fondo para que no se transparenten.
+    el.innerHTML = `
+        <div style="
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 420px);
+            min-height: 220px;
+        ">
+            <table class="data-table" style="min-width:1100px;">
+                <thead style="position:sticky; top:0; z-index:3;">
+                    <tr>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Estado</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Fallas DTC</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">País</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Patente</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">VIN</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Empresa</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Marca</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Segmento</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Modelo</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Taller más cercano</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Odómetro (km)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Horómetro (h)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Próx. servicio (km)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Km restantes</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Umbral marca</th>
+                    </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        </div>`;
+    el.style.display = 'block';
     document.getElementById('ef-info').textContent =
         `${fmt(rows.length)} unidades · ordenadas por urgencia`;
 }
