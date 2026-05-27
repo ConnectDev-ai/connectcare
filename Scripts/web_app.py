@@ -751,37 +751,33 @@ def api_modelos_sucursal():
 
         logging.info("modelos-sucursal: has_marca=%s has_sap_segmento=%s", has_marca, has_seg)
 
+        # Expresión SQL reutilizable que limpia modelo:
+        # 1) modelo vacío o solo guiones/em-dashes → NULL
+        # 2) fallback a vehicle_name, excepto VINs de 17 chars o placeholders
+        _mod_norm = (
+            "COALESCE("
+            "CASE WHEN TRIM(modelo) = '' OR TRIM(modelo) ~ '^[-—–]+$' "
+            "     THEN NULL ELSE TRIM(modelo) END,"
+            "CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{17}$'"
+            "          OR TRIM(vehicle_name) = ''"
+            "          OR TRIM(vehicle_name) ~ '^[-—–]+$'"
+            "     THEN NULL ELSE TRIM(vehicle_name) END"
+            ")"
+        )
+
         with engine.connect() as conn:
             df = pd.read_sql(text(f"""
                 SELECT taller_cercano_nombre AS taller,
-                       COALESCE(
-                           NULLIF(TRIM(modelo), ''),
-                           CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
-                                THEN NULL
-                                ELSE NULLIF(TRIM(vehicle_name), '')
-                           END
-                       ) AS modelo,
+                       {_mod_norm} AS modelo,
                        {marca_expr} AS marca,
                        {seg_expr}   AS segmento,
                        COUNT(*) AS unidades
                 FROM snapshot_unit
                 WHERE run_id = :run_id
                   AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                  AND COALESCE(
-                          NULLIF(TRIM(modelo), ''),
-                          CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
-                               THEN NULL
-                               ELSE NULLIF(TRIM(vehicle_name), '')
-                          END
-                      ) IS NOT NULL
+                  AND {_mod_norm} IS NOT NULL
                 GROUP BY taller_cercano_nombre,
-                         COALESCE(
-                             NULLIF(TRIM(modelo), ''),
-                             CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
-                                  THEN NULL
-                                  ELSE NULLIF(TRIM(vehicle_name), '')
-                             END
-                         ),
+                         {_mod_norm},
                          {marca_expr},
                          {seg_expr}
                 ORDER BY taller_cercano_nombre, unidades DESC
@@ -790,8 +786,15 @@ def api_modelos_sucursal():
         if df.empty:
             return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
 
-        # Seguridad extra: descartar filas donde modelo quedó vacío/nulo después de todo
-        df = df[df["modelo"].notna() & (df["modelo"].astype(str).str.strip() != "")]
+        # Seguridad extra en Python: descartar modelos vacíos, solo-guiones y placeholders
+        _m_str = df["modelo"].astype(str).str.strip()
+        _INVALIDOS = {'', '-', '—', '–', '--', '---', 'n/a', 'na', 'none', 'null', 'sin modelo', 'sin datos'}
+        df = df[
+            df["modelo"].notna() &
+            (_m_str != "") &
+            ~_m_str.str.match(r'^[-—–]+$') &
+            ~_m_str.str.lower().isin(_INVALIDOS)
+        ]
 
         if df.empty:
             return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
