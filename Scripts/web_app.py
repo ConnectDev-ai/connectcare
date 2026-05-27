@@ -754,20 +754,44 @@ def api_modelos_sucursal():
         with engine.connect() as conn:
             df = pd.read_sql(text(f"""
                 SELECT taller_cercano_nombre AS taller,
-                       COALESCE(NULLIF(modelo,''), vehicle_name) AS modelo,
+                       COALESCE(
+                           NULLIF(TRIM(modelo), ''),
+                           CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                                THEN NULL
+                                ELSE NULLIF(TRIM(vehicle_name), '')
+                           END
+                       ) AS modelo,
                        {marca_expr} AS marca,
                        {seg_expr}   AS segmento,
                        COUNT(*) AS unidades
                 FROM snapshot_unit
                 WHERE run_id = :run_id
                   AND taller_cercano_nombre IS NOT NULL AND taller_cercano_nombre != ''
-                  AND COALESCE(NULLIF(modelo,''), vehicle_name) IS NOT NULL
+                  AND COALESCE(
+                          NULLIF(TRIM(modelo), ''),
+                          CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                               THEN NULL
+                               ELSE NULLIF(TRIM(vehicle_name), '')
+                          END
+                      ) IS NOT NULL
                 GROUP BY taller_cercano_nombre,
-                         COALESCE(NULLIF(modelo,''), vehicle_name),
+                         COALESCE(
+                             NULLIF(TRIM(modelo), ''),
+                             CASE WHEN TRIM(vehicle_name) ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                                  THEN NULL
+                                  ELSE NULLIF(TRIM(vehicle_name), '')
+                             END
+                         ),
                          {marca_expr},
                          {seg_expr}
                 ORDER BY taller_cercano_nombre, unidades DESC
             """), conn, params={"run_id": run_id})
+
+        if df.empty:
+            return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
+
+        # Seguridad extra: descartar filas donde modelo quedó vacío/nulo después de todo
+        df = df[df["modelo"].notna() & (df["modelo"].astype(str).str.strip() != "")]
 
         if df.empty:
             return _json({"talleres": [], "modelos": [], "marcas": [], "segmentos": [], "rows": []})
