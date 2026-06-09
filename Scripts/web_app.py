@@ -781,6 +781,7 @@ def api_modelos_sucursal():
                          {marca_expr},
                          {seg_expr}
                 ORDER BY taller_cercano_nombre, unidades DESC
+                
             """), conn, params={"run_id": run_id})
 
         if df.empty:
@@ -1442,5 +1443,5 @@ if __name__ == "__main__":
     p.add_argument("--port",     type=int, default=5000)
     p.add_argument("--no-debug", dest="debug", action="store_false", default=False)
     args = p.parse_args()
-    print(f"\n  Fleet Intelligence  →  http://localhost:{args.port}\n")
+    print(f"\n  Fleet Intelligence  ->  http://localhost:{args.port}\n")
     app.run(host=args.host, port=args.port, debug=args.debug)
