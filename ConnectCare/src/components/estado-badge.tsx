@@ -11,9 +11,14 @@ export const ESTADO_META: Record<
     chip: "bg-red-50 text-red-700 ring-red-600/20",
   },
   ATENCION: {
-    label: "Atención",
+    label: "En tolerancia",
     dot: "bg-atencion",
     chip: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  },
+  PROXIMO: {
+    label: "Próximo",
+    dot: "bg-proximo",
+    chip: "bg-blue-50 text-blue-700 ring-blue-600/20",
   },
   OK: {
     label: "Al día",

@@ -26,6 +26,7 @@
   /* Maintenance-state semantics */
   --color-critico: #dc2626;
   --color-atencion: #d97706;
+  --color-proximo: #2563eb;
   --color-ok: #008870;
 
   --font-sans: var(--font-geist-sans);

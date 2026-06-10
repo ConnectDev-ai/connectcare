@@ -1,5 +1,5 @@
-import { FleetDashboard } from "@/components/fleet-dashboard";
+import { HomeDashboard } from "@/components/home-dashboard";
 
 export default function Page() {
-  return <FleetDashboard />;
+  return <HomeDashboard />;
 }

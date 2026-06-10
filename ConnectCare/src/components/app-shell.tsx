@@ -11,6 +11,7 @@ import {
   FileBarChart,
   Settings,
   Sparkles,
+  Gauge,
 } from "lucide-react";
 import { ConnectCareLogo } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
@@ -23,13 +24,14 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
-  { label: "Inicio", href: "/", icon: LayoutDashboard, ready: true },
-  { label: "Mantenciones", href: "/mantenciones", icon: Wrench },
-  { label: "Pautas", href: "/pautas", icon: ClipboardList },
-  { label: "Diagnóstico", href: "/diagnostico", icon: Activity },
-  { label: "Talleres", href: "/talleres", icon: MapPin },
-  { label: "Reportes", href: "/reportes", icon: FileBarChart },
-  { label: "Configuración", href: "/configuracion", icon: Settings },
+  { label: "Inicio",         href: "/",             icon: LayoutDashboard, ready: true },
+  { label: "Estado de flota",href: "/estado-flota", icon: Gauge,           ready: true },
+  { label: "Mantenciones",   href: "/mantenciones", icon: Wrench,          ready: true },
+  { label: "Pautas",         href: "/pautas",        icon: ClipboardList },
+  { label: "Diagnóstico",    href: "/diagnostico",   icon: Activity },
+  { label: "Talleres",       href: "/talleres",      icon: MapPin },
+  { label: "Reportes",       href: "/reportes",      icon: FileBarChart },
+  { label: "Configuración",  href: "/configuracion", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
