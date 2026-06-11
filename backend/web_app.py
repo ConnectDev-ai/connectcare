@@ -143,11 +143,12 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
         raw = path.read_bytes()[:2048].decode("utf-8-sig", errors="replace")
         sep = ";" if raw.count(";") >= raw.count(",") else ","
         df = pd.read_csv(path, sep=sep, dtype=str, usecols=needed, encoding="utf-8-sig")
-        df.columns     = [c.strip() for c in df.columns]
-        df["nro_chassis"]      = df["nro_chassis"].str.strip().str.upper()
-        df["km_paso_mant"]     = pd.to_numeric(df["km_paso_mant"],     errors="coerce")
-        df["pauta_mantencion"] = pd.to_numeric(df["pauta_mantencion"],  errors="coerce")
-        df["fec_ingreso_dia"]  = pd.to_datetime(df["fec_ingreso_dia"],  errors="coerce")
+        df.columns                  = [c.strip() for c in df.columns]
+        df["nro_chassis"]           = df["nro_chassis"].str.strip().str.upper()
+        df["km_paso_mant"]          = pd.to_numeric(df["km_paso_mant"],           errors="coerce")
+        df["pauta_mantencion"]      = pd.to_numeric(df["pauta_mantencion"],        errors="coerce")
+        df["prox_pauta_mantencion"] = pd.to_numeric(df["prox_pauta_mantencion"],   errors="coerce")
+        df["fec_ingreso_dia"]       = pd.to_datetime(df["fec_ingreso_dia"],        errors="coerce")
         df = df.dropna(subset=["nro_chassis", "km_paso_mant"])
         df = df.sort_values("fec_ingreso_dia", ascending=False)
 
@@ -157,27 +158,42 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
         for _, r in df.iterrows():
             vin   = r["nro_chassis"]
             pauta = r["pauta_mantencion"]
+            prox  = r["prox_pauta_mantencion"]
             fecha = r["fec_ingreso_dia"]
+
+            # prox_pauta_mantencion = km objetivo del próximo servicio (valor numérico)
+            prox_km_val = float(prox) if pd.notna(prox) and float(prox) > 0 else None
 
             record = {
                 "fecha":        fecha.strftime("%Y-%m-%d") if pd.notna(fecha) else None,
                 "km_ingreso":   float(r["km_paso_mant"]),
-                "tipo_servicio":(str(r.get("tipo_servicio",          "") or "").strip() or None),
+                "tipo_servicio":(str(r.get("tipo_servicio",       "") or "").strip() or None),
                 "pauta_km":     int(pauta) if pd.notna(pauta) else None,
-                "prox_codigo":  (str(r.get("prox_pauta_mantencion",  "") or "").strip() or None),
-                "contrato":     (str(r.get("producto_contr_paso",    "") or "").strip() or None),
+                "prox_km":      prox_km_val,
+                "contrato":     (str(r.get("producto_contr_paso", "") or "").strip() or None),
             }
             full_by_vin.setdefault(vin, []).append(record)
 
-            # El primer registro que encontramos es el más reciente (df ya está ordenado desc)
-            if vin not in latest_by_vin:
+            # df ordenado desc → primera fila = visita más reciente
+            prev = latest_by_vin.get(vin)
+            if prev is None:
                 latest_by_vin[vin] = {
-                    "ultimo_serv":      (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
-                    "prox_serv_codigo": record["prox_codigo"],
-                    "km_ult_mant":      record["km_ingreso"],
-                    "tipo_servicio":    record["tipo_servicio"],
-                    "contrato":         record["contrato"],
+                    "ultimo_serv":   (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
+                    "prox_km":       prox_km_val,
+                    "prox_serv_codigo": (f"{int(prox_km_val):,} km".replace(",", ".") if prox_km_val else None),
+                    "km_ult_mant":   record["km_ingreso"],
+                    "pauta_ult":     record["pauta_km"],
+                    "tipo_servicio": record["tipo_servicio"],
+                    "contrato":      record["contrato"],
                 }
+            else:
+                # Completar desde filas anteriores si faltan datos en la más reciente
+                if prev["prox_km"] is None and prox_km_val is not None:
+                    prev["prox_km"] = prox_km_val
+                    prev["prox_serv_codigo"] = f"{int(prox_km_val):,} km".replace(",", ".")
+                if prev["ultimo_serv"] is None and pd.notna(pauta):
+                    prev["ultimo_serv"] = f"{int(pauta):,} km".replace(",", ".")
+                    prev["pauta_ult"]   = record["pauta_km"]
 
         logging.getLogger("geo-workshop").info(
             "historial_mant: %d unidades cargadas desde %s", len(latest_by_vin), path.name
@@ -1149,16 +1165,22 @@ def api_estado_flota():
         prioridad_max = ("Urgente" if "Urgente" in prioridades else
                          "Seguimiento" if prioridades else None)
 
-        # Pauta-based maintenance: if we have workshop history, use km_ult_mant + brand
-        # threshold to project the next service target. prox_pauta_mantencion in the
-        # CSV is a schedule sequence code, NOT a km value, so it is intentionally ignored.
-        vin_key  = _vin_v[i]
-        hist     = _HISTORIAL_BY_VIN.get(vin_key) or {}
-        km_ult   = hist.get("km_ult_mant")
-        if km_ult and km_ult > 0 and odo is not None:
-            prox_km  = km_ult + float(_umbl_v[i])
+        vin_key      = _vin_v[i]
+        hist         = _HISTORIAL_BY_VIN.get(vin_key) or {}
+        prox_km_csv  = hist.get("prox_km")
+        km_ult       = hist.get("km_ult_mant")
+        umbral_f     = float(_umbl_v[i])
+        if prox_km_csv and prox_km_csv > 0 and odo is not None:
+            # Fuente primaria: km objetivo del CSV (prox_pauta_mantencion)
+            prox_km  = prox_km_csv
             km_rest  = round(prox_km - odo, 0)
-            estado_i = _estado_mantenimiento(km_rest, float(_umbl_v[i]))
+            estado_i = _estado_mantenimiento(km_rest, umbral_f)
+        elif km_ult and km_ult > 0 and odo is not None:
+            # Fallback: última pauta conocida + intervalo de marca
+            pauta_ult = hist.get("pauta_ult") or km_ult
+            prox_km   = pauta_ult + umbral_f
+            km_rest   = round(prox_km - odo, 0)
+            estado_i  = _estado_mantenimiento(km_rest, umbral_f)
         else:
             prox_km  = _prox_v[i]
             km_rest  = _rest_v[i]
@@ -1396,16 +1418,23 @@ def api_unit_lookup():
     uid = (_safe_str(r["unit_id"]) or "").strip().upper()
     vin = (_safe_str(r["vin"])     or "").strip().upper()
     vin_key = uid or vin
-    hist = _HISTORIAL_BY_VIN.get(vin_key) or {}
-    km_ult = hist.get("km_ult_mant")
+    hist        = _HISTORIAL_BY_VIN.get(vin_key) or {}
+    prox_km_csv = hist.get("prox_km")
+    km_ult      = hist.get("km_ult_mant")
+    umbral_f    = float(umbral)
 
-    if km_ult and km_ult > 0 and odo is not None:
-        prox_km  = km_ult + float(umbral)
+    if prox_km_csv and prox_km_csv > 0 and odo is not None:
+        prox_km  = prox_km_csv
         km_rest  = round(prox_km - odo, 0)
-        estado_v = _estado_mantenimiento(km_rest, float(umbral))
+        estado_v = _estado_mantenimiento(km_rest, umbral_f)
+    elif km_ult and km_ult > 0 and odo is not None:
+        pauta_ult = hist.get("pauta_ult") or km_ult
+        prox_km   = pauta_ult + umbral_f
+        km_rest   = round(prox_km - odo, 0)
+        estado_v  = _estado_mantenimiento(km_rest, umbral_f)
     elif odo is not None:
         prox_km, km_rest = _proximo_servicio(odo, umbral)
-        estado_v = _estado_mantenimiento(km_rest, float(umbral))
+        estado_v = _estado_mantenimiento(km_rest, umbral_f)
     else:
         prox_km = km_rest = None
         estado_v = "SIN_DATOS"
@@ -1521,13 +1550,18 @@ def api_pautas():
         umbral = float(_umbl_v[i])
         uid    = vin_keys[i]
 
-        hist   = _HISTORIAL_BY_VIN.get(uid) or {}
-        km_ult = hist.get("km_ult_mant")
+        hist        = _HISTORIAL_BY_VIN.get(uid) or {}
+        prox_km_csv = hist.get("prox_km")
+        km_ult      = hist.get("km_ult_mant")
 
-        if km_ult:
+        if km_ult or prox_km_csv:
             con_historial += 1
             if odo:
-                km_rest  = round(km_ult + umbral - odo, 0)
+                if prox_km_csv and prox_km_csv > 0:
+                    km_rest = round(prox_km_csv - odo, 0)
+                else:
+                    pauta_ult = hist.get("pauta_ult") or km_ult
+                    km_rest   = round(pauta_ult + umbral - odo, 0)
                 estado_i = _estado_mantenimiento(km_rest, umbral)
             else:
                 km_rest, estado_i = None, "SIN_DATOS"
@@ -1783,10 +1817,14 @@ def api_degradados():
         for odo_v, uid, umbral in zip(odo_arr, uid_arr, umbrales):
             if pd.isna(odo_v) or odo_v <= 0:
                 estados.append("SIN_DATOS"); km_rests.append(None); continue
-            hist   = _HISTORIAL_BY_VIN.get(uid) or {}
-            km_ult = hist.get("km_ult_mant")
-            if km_ult and km_ult > 0:
-                km_rest = round(km_ult + float(umbral) - float(odo_v), 0)
+            hist        = _HISTORIAL_BY_VIN.get(uid) or {}
+            prox_km_csv = hist.get("prox_km")
+            km_ult      = hist.get("km_ult_mant")
+            if prox_km_csv and prox_km_csv > 0:
+                km_rest = round(prox_km_csv - float(odo_v), 0)
+            elif km_ult and km_ult > 0:
+                pauta_ult = hist.get("pauta_ult") or km_ult
+                km_rest   = round(pauta_ult + float(umbral) - float(odo_v), 0)
             else:
                 _, km_rest = _proximo_servicio(float(odo_v), umbral)
             estados.append(_estado_mantenimiento(km_rest, float(umbral)))
