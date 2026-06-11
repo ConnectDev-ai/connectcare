@@ -139,10 +139,13 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
     try:
         needed = ["nro_chassis", "fec_ingreso_dia", "tipo_servicio",
                   "producto_contr_paso", "km_paso_mant",
-                  "pauta_mantencion", "prox_pauta_mantencion"]
+                  "pauta_mantencion", "prox_pauta_mantencion", "detalle_trabajo"]
         raw = path.read_bytes()[:2048].decode("utf-8-sig", errors="replace")
         sep = ";" if raw.count(";") >= raw.count(",") else ","
-        df = pd.read_csv(path, sep=sep, dtype=str, usecols=needed, encoding="utf-8-sig")
+        # detalle_trabajo puede no existir en archivos anteriores — leer todas las cols disponibles
+        all_cols = pd.read_csv(path, sep=sep, nrows=0, encoding="utf-8-sig").columns.tolist()
+        usecols  = [c for c in needed if c in all_cols]
+        df = pd.read_csv(path, sep=sep, dtype=str, usecols=usecols, encoding="utf-8-sig")
         df.columns                  = [c.strip() for c in df.columns]
         df["nro_chassis"]           = df["nro_chassis"].str.strip().str.upper()
         df["km_paso_mant"]          = pd.to_numeric(df["km_paso_mant"],           errors="coerce")
@@ -164,13 +167,17 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
             # prox_pauta_mantencion = km objetivo del próximo servicio (valor numérico)
             prox_km_val = float(prox) if pd.notna(prox) and float(prox) > 0 else None
 
+            detalle_raw = r.get("detalle_trabajo", "") if "detalle_trabajo" in r.index else ""
+            detalle = (str(detalle_raw) or "").strip() or None
+
             record = {
-                "fecha":        fecha.strftime("%Y-%m-%d") if pd.notna(fecha) else None,
-                "km_ingreso":   float(r["km_paso_mant"]),
-                "tipo_servicio":(str(r.get("tipo_servicio",       "") or "").strip() or None),
-                "pauta_km":     int(pauta) if pd.notna(pauta) else None,
-                "prox_km":      prox_km_val,
-                "contrato":     (str(r.get("producto_contr_paso", "") or "").strip() or None),
+                "fecha":          fecha.strftime("%Y-%m-%d") if pd.notna(fecha) else None,
+                "km_ingreso":     float(r["km_paso_mant"]),
+                "tipo_servicio":  (str(r.get("tipo_servicio",       "") or "").strip() or None),
+                "pauta_km":       int(pauta) if pd.notna(pauta) else None,
+                "prox_km":        prox_km_val,
+                "contrato":       (str(r.get("producto_contr_paso", "") or "").strip() or None),
+                "detalle_trabajo": detalle,
             }
             full_by_vin.setdefault(vin, []).append(record)
 
@@ -178,13 +185,14 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
             prev = latest_by_vin.get(vin)
             if prev is None:
                 latest_by_vin[vin] = {
-                    "ultimo_serv":   (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
-                    "prox_km":       prox_km_val,
+                    "ultimo_serv":      (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
+                    "prox_km":          prox_km_val,
                     "prox_serv_codigo": (f"{int(prox_km_val):,} km".replace(",", ".") if prox_km_val else None),
-                    "km_ult_mant":   record["km_ingreso"],
-                    "pauta_ult":     record["pauta_km"],
-                    "tipo_servicio": record["tipo_servicio"],
-                    "contrato":      record["contrato"],
+                    "km_ult_mant":      record["km_ingreso"],
+                    "pauta_ult":        record["pauta_km"],
+                    "tipo_servicio":    record["tipo_servicio"],
+                    "contrato":         record["contrato"],
+                    "detalle_trabajo":  detalle,
                 }
             else:
                 # Completar desde filas anteriores si faltan datos en la más reciente
@@ -194,6 +202,8 @@ def _load_historial_mant() -> "tuple[dict[str, dict], dict[str, list]]":
                 if prev["ultimo_serv"] is None and pd.notna(pauta):
                     prev["ultimo_serv"] = f"{int(pauta):,} km".replace(",", ".")
                     prev["pauta_ult"]   = record["pauta_km"]
+                if prev.get("detalle_trabajo") is None and detalle:
+                    prev["detalle_trabajo"] = detalle
 
         logging.getLogger("geo-workshop").info(
             "historial_mant: %d unidades cargadas desde %s", len(latest_by_vin), path.name
@@ -1210,6 +1220,7 @@ def api_estado_flota():
             "km_ult_mant":         hist.get("km_ult_mant"),
             "tipo_servicio":       hist.get("tipo_servicio"),
             "contrato":            hist.get("contrato"),
+            "detalle_trabajo":     hist.get("detalle_trabajo"),
             "fallas":              fallas,
             "fallas_count":        len(fallas),
             "prioridad_falla":     prioridad_max,
@@ -1465,6 +1476,7 @@ def api_unit_lookup():
         "km_ult_mant":         hist.get("km_ult_mant"),
         "tipo_servicio":       hist.get("tipo_servicio"),
         "contrato":            hist.get("contrato"),
+        "detalle_trabajo":     hist.get("detalle_trabajo"),
         "fallas_count":        len(fallas),
         "prioridad_falla":     prioridad_max,
         "snap_ts":             snap_ts[:16] if snap_ts else "",
@@ -1585,6 +1597,7 @@ def api_pautas():
                 "prox_serv_codigo": hist.get("prox_serv_codigo"),
                 "tipo_servicio":    hist.get("tipo_servicio"),
                 "contrato":         hist.get("contrato"),
+                "detalle_trabajo":  hist.get("detalle_trabajo"),
                 "fecha_ult_mant":   fecha_ult,
                 "km_restantes":     km_rest,
                 "estado":           estado_i,
