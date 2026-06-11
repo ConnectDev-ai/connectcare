@@ -232,6 +232,11 @@ export function UnitDetailPanel({ unit, onClose, onCreateTicket }: Props) {
                           {rec.contrato && (
                             <p className="text-[11px] text-muted">{rec.contrato}</p>
                           )}
+                          {rec.detalle_trabajo && (
+                            <p className="mt-1 text-[11px] leading-snug text-ink/80">
+                              {rec.detalle_trabajo}
+                            </p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           {rec.fecha && (

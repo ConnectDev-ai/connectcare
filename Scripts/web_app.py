@@ -121,13 +121,29 @@ def _load_fallas() -> dict[str, list[dict]]:
 _FALLAS_BY_VIN: dict[str, list[dict]] = _load_fallas()
 
 # ── Historial de mantenciones ─────────────────────────────────────────────────
-def _load_historial_mant() -> dict[str, dict]:
-    """Carga historial de pasos por taller → dict VIN → último ingreso registrado.
+_HISTORIAL_CSV_PATH: "Path | None" = None   # set at startup; used by lazy loader
+_HIST_UNIT_CACHE:   dict[str, list] = {}    # VIN → records, populated on first request
 
-    El registro más reciente se selecciona por fecha de ingreso (fec_ingreso_dia),
-    no por mayor odómetro, para reflejar fielmente la última visita al taller.
+_HISTORIAL_NEEDED = [
+    "nro_chassis", "fec_ingreso_dia", "tipo_servicio",
+    "producto_contr_paso", "km_paso_mant",
+    "pauta_mantencion", "prox_pauta_mantencion",
+    "detalle_trabajo",
+]
+
+def _historial_sep(path: "Path") -> str:
+    raw = path.read_bytes()[:2048].decode("utf-8-sig", errors="replace")
+    return ";" if raw.count(";") >= raw.count(",") else ","
+
+
+def _load_historial_mant() -> "dict[str, dict]":
+    """Carga solo el registro MÁS RECIENTE por VIN (pequeño en memoria).
+
+    El historial completo se lee on-demand en _get_unit_history().
+    Retorna latest_by_vin — VIN → {ultimo_serv, prox_serv_codigo, km_ult_mant,
+                                    tipo_servicio, contrato, fecha_ult_mant}
     """
-    # Buscar en Data/ y ConnectCare/Data/ — tomar el archivo más grande (más completo)
+    global _HISTORIAL_CSV_PATH
     candidates = sorted(
         PROJECT_ROOT.rglob("salida_detalle_paso_taller_pautas_mant*.csv"),
         key=lambda p: p.stat().st_size,
@@ -136,38 +152,42 @@ def _load_historial_mant() -> dict[str, dict]:
     if not candidates:
         return {}
     path = candidates[0]
+    _HISTORIAL_CSV_PATH = path
     try:
-        needed = ["nro_chassis", "fec_ingreso_dia", "tipo_servicio",
-                  "producto_contr_paso", "km_paso_mant",
-                  "pauta_mantencion", "prox_pauta_mantencion"]
-        raw = path.read_bytes()[:2048].decode("utf-8-sig", errors="replace")
-        sep = ";" if raw.count(";") >= raw.count(",") else ","
-        df = pd.read_csv(path, sep=sep, dtype=str, usecols=needed, encoding="utf-8-sig")
-        df.columns = [c.strip() for c in df.columns]
-        df["nro_chassis"]     = df["nro_chassis"].str.strip().str.upper()
-        df["km_paso_mant"]    = pd.to_numeric(df["km_paso_mant"],    errors="coerce")
-        df["pauta_mantencion"]= pd.to_numeric(df["pauta_mantencion"], errors="coerce")
-        df["fec_ingreso_dia"] = pd.to_datetime(df["fec_ingreso_dia"], errors="coerce")
-        df = df.dropna(subset=["nro_chassis", "km_paso_mant"])
-        # Registro más reciente por unidad = mayor fecha de ingreso
-        df = df.sort_values("fec_ingreso_dia", ascending=False).drop_duplicates("nro_chassis", keep="first")
-        result: dict[str, dict] = {}
-        for _, r in df.iterrows():
-            # pauta_mantencion: km del hito de mantención completado (ej: 10000, 30000)
-            # prox_pauta_mantencion: código del próximo hito en la pauta
-            pauta = r["pauta_mantencion"]
-            result[r["nro_chassis"]] = {
-                "ultimo_serv":      (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
-                "prox_serv_codigo": (str(r.get("prox_pauta_mantencion", "") or "").strip() or None),
-                "km_ult_mant":      float(r["km_paso_mant"]),
-                "tipo_servicio":    (str(r.get("tipo_servicio",          "") or "").strip() or None),
-                "contrato":         (str(r.get("producto_contr_paso",    "") or "").strip() or None),
-            }
-        return result
+        sep = _historial_sep(path)
+        latest_by_vin: dict[str, dict] = {}
+
+        for chunk in pd.read_csv(
+            path, sep=sep, dtype=str, usecols=_HISTORIAL_NEEDED,
+            encoding="utf-8-sig", chunksize=5_000,
+        ):
+            chunk.columns          = [c.strip() for c in chunk.columns]
+            chunk["nro_chassis"]   = chunk["nro_chassis"].str.strip().str.upper()
+            chunk["km_paso_mant"]  = pd.to_numeric(chunk["km_paso_mant"],    errors="coerce")
+            chunk["pauta_mant"]    = pd.to_numeric(chunk["pauta_mantencion"], errors="coerce")
+            chunk["fec"]           = pd.to_datetime(chunk["fec_ingreso_dia"], errors="coerce")
+            chunk = chunk.dropna(subset=["nro_chassis", "km_paso_mant"])
+            chunk = chunk.sort_values("fec", ascending=False)
+
+            for _, r in chunk.iterrows():
+                vin = r["nro_chassis"]
+                if vin in latest_by_vin:
+                    continue
+                pauta = r["pauta_mant"]
+                fecha = r["fec"]
+                latest_by_vin[vin] = {
+                    "ultimo_serv":      (f"{int(pauta):,} km".replace(",", ".") if pd.notna(pauta) else None),
+                    "prox_serv_codigo": (str(r.get("prox_pauta_mantencion", "") or "").strip() or None),
+                    "km_ult_mant":      float(r["km_paso_mant"]),
+                    "tipo_servicio":    (str(r.get("tipo_servicio",         "") or "").strip() or None),
+                    "contrato":         (str(r.get("producto_contr_paso",   "") or "").strip() or None),
+                    "fecha_ult_mant":   (fecha.strftime("%Y-%m-%d") if pd.notna(fecha) else None),
+                }
+
         logging.getLogger("geo-workshop").info(
-            "historial_mant: %d unidades cargadas desde %s", len(result), path.name
+            "historial_mant: %d unidades (solo latest) desde %s", len(latest_by_vin), path.name
         )
-        return result
+        return latest_by_vin
     except Exception as exc:
         import traceback
         logging.getLogger("geo-workshop").warning(
@@ -175,7 +195,70 @@ def _load_historial_mant() -> dict[str, dict]:
         )
         return {}
 
-_HISTORIAL_BY_VIN: dict[str, dict] = _load_historial_mant()
+
+def _get_unit_history(unit_id: str, vin: str) -> list:
+    """Retorna el historial completo de una unidad leyendo el CSV on-demand.
+
+    Usa chunksize para nunca cargar el archivo completo en memoria.
+    Cachea el resultado por VIN para requests repetidas.
+    """
+    keys = {k for k in [unit_id, vin] if k}
+    for key in keys:
+        if key in _HIST_UNIT_CACHE:
+            return _HIST_UNIT_CACHE[key]
+
+    if _HISTORIAL_CSV_PATH is None or not _HISTORIAL_CSV_PATH.exists():
+        return []
+
+    try:
+        sep = _historial_sep(_HISTORIAL_CSV_PATH)
+        matching: list[pd.DataFrame] = []
+
+        for chunk in pd.read_csv(
+            _HISTORIAL_CSV_PATH, sep=sep, dtype=str, usecols=_HISTORIAL_NEEDED,
+            encoding="utf-8-sig", chunksize=5_000,
+        ):
+            chunk.columns        = [c.strip() for c in chunk.columns]
+            chunk["nro_chassis"] = chunk["nro_chassis"].str.strip().str.upper()
+            hit = chunk[chunk["nro_chassis"].isin(keys)]
+            if not hit.empty:
+                matching.append(hit)
+
+        if not matching:
+            for key in keys:
+                _HIST_UNIT_CACHE[key] = []
+            return []
+
+        df = pd.concat(matching, ignore_index=True)
+        df["km_paso_mant"]     = pd.to_numeric(df["km_paso_mant"],    errors="coerce")
+        df["pauta_mantencion"] = pd.to_numeric(df["pauta_mantencion"], errors="coerce")
+        df["fec_ingreso_dia"]  = pd.to_datetime(df["fec_ingreso_dia"], errors="coerce")
+        df = df.dropna(subset=["km_paso_mant"])
+        df = df.sort_values("fec_ingreso_dia", ascending=False)
+
+        records = []
+        for _, r in df.iterrows():
+            fecha = r["fec_ingreso_dia"]
+            pauta = r["pauta_mantencion"]
+            records.append({
+                "fecha":           (fecha.strftime("%Y-%m-%d") if pd.notna(fecha) else None),
+                "km_ingreso":      float(r["km_paso_mant"]),
+                "tipo_servicio":   (str(r.get("tipo_servicio",         "") or "").strip() or None),
+                "pauta_km":        (int(pauta) if pd.notna(pauta) else None),
+                "prox_codigo":     (str(r.get("prox_pauta_mantencion", "") or "").strip() or None),
+                "contrato":        (str(r.get("producto_contr_paso",   "") or "").strip() or None),
+                "detalle_trabajo": (str(r.get("detalle_trabajo",       "") or "").strip() or None),
+            })
+
+        for key in keys:
+            _HIST_UNIT_CACHE[key] = records
+        return records
+
+    except Exception:
+        return []
+
+
+_HISTORIAL_BY_VIN = _load_historial_mant()
 
 # ── Maintenance tickets ────────────────────────────────────────────────────────
 def _ensure_ticket_tables() -> None:
@@ -1425,6 +1508,391 @@ def api_unit_lookup():
         "prioridad_falla":     prioridad_max,
         "snap_ts":             snap_ts[:16] if snap_ts else "",
         "matches":             matches,
+    })
+
+
+# ── Route: /api/unit-history ─────────────────────────────────────────────────
+@app.route("/api/unit-history")
+@require_auth
+def api_unit_history():
+    """Historial completo de mantenciones de una unidad.
+
+    Query params:
+      unit_id — unit_id o VIN de la unidad
+      vin     — VIN alternativo (se intenta además del unit_id)
+    """
+    unit_id = request.args.get("unit_id", "").strip().upper()
+    vin     = request.args.get("vin",     "").strip().upper()
+
+    history = _get_unit_history(unit_id, vin)
+    return _json({"unit_id": unit_id or vin, "history": history})
+
+
+# ── Route: /api/pautas ───────────────────────────────────────────────────────
+@app.route("/api/pautas")
+@require_auth
+def api_pautas():
+    """Cumplimiento de pautas de mantención por unidad.
+
+    Filtra al subconjunto con historial de taller (km_ult_mant conocido).
+    Incluye KPIs de cobertura, tabla de intervalos por marca y listado
+    ordenado por urgencia.
+    """
+    if (hit := _cache_hit("api:pautas")) is not None:
+        return hit
+
+    run_id, snap_ts = _latest_run()
+    if run_id is None:
+        return _json({"error": "No data"}, 404)
+
+    existing_cols = _get_schema_cols()
+    marca_expr = (
+        "NULLIF(TRIM(COALESCE(su.marca,'')),'')" if "marca" in existing_cols else "NULL::text"
+    )
+
+    with engine.connect() as conn:
+        df = pd.read_sql(text(f"""
+            SELECT su.unit_id, su.vin, su.patente, su.empresa,
+                   COALESCE(
+                       NULLIF(su.modelo,''),
+                       CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                            THEN NULL ELSE su.vehicle_name END
+                   ) AS modelo,
+                   su.taller_cercano_nombre AS taller,
+                   su.can_odometer,
+                   {marca_expr} AS marca
+            FROM snapshot_unit su
+            WHERE su.run_id = :run_id
+        """), conn, params={"run_id": run_id})
+
+    df["can_odometer"] = pd.to_numeric(df["can_odometer"], errors="coerce")
+    df["modelo"]       = df["modelo"].fillna("")
+    df["empresa"]      = df["empresa"].fillna("")
+
+    total        = len(df)
+    con_historial = 0
+
+    marca_umbral = [_detectar_marca(m) for m in df["modelo"].tolist()]
+    _umbl_v  = [x[1] for x in marca_umbral]
+    _marc_v  = [x[0] for x in marca_umbral]
+    _odo_v   = pd.to_numeric(df["can_odometer"], errors="coerce").values
+    vin_keys = df["unit_id"].fillna("").astype(str).str.strip().str.upper().values
+
+    rows_out = []
+    for i, r in enumerate(df.itertuples(index=False)):
+        odo_v  = _odo_v[i]
+        odo    = None if pd.isna(odo_v) else round(float(odo_v), 0)
+        umbral = float(_umbl_v[i])
+        uid    = vin_keys[i]
+
+        hist   = _HISTORIAL_BY_VIN.get(uid) or {}
+        km_ult = hist.get("km_ult_mant")
+
+        if km_ult:
+            con_historial += 1
+            if odo:
+                km_rest  = round(km_ult + umbral - odo, 0)
+                estado_i = _estado_mantenimiento(km_rest, umbral)
+            else:
+                km_rest, estado_i = None, "SIN_DATOS"
+
+            fecha_ult = hist.get("fecha_ult_mant")
+
+            rows_out.append({
+                "unit_id":          _safe_str(r.unit_id),
+                "vin":              _safe_str(r.vin),
+                "patente":          _safe_str(r.patente),
+                "empresa":          _safe_str(r.empresa) or "",
+                "modelo":           _safe_str(r.modelo),
+                "taller":           _safe_str(r.taller),
+                "can_odometer":     odo,
+                "marca_detectada":  _marc_v[i],
+                "umbral_km":        int(umbral),
+                "ultimo_serv":      hist.get("ultimo_serv"),
+                "km_ult_mant":      km_ult,
+                "prox_serv_codigo": hist.get("prox_serv_codigo"),
+                "tipo_servicio":    hist.get("tipo_servicio"),
+                "contrato":         hist.get("contrato"),
+                "fecha_ult_mant":   fecha_ult,
+                "km_restantes":     km_rest,
+                "estado":           estado_i,
+            })
+
+    _RANK = {"CRITICO": 0, "ATENCION": 1, "PROXIMO": 2, "OK": 3, "SIN_DATOS": 4}
+    rows_out.sort(key=lambda x: (
+        _RANK.get(x["estado"], 4),
+        x["km_restantes"] if x["km_restantes"] is not None else 999_999,
+    ))
+
+    # Estado breakdown (para el summary visual)
+    estado_counts: dict[str, int] = {}
+    for rw in rows_out:
+        e = rw["estado"]
+        estado_counts[e] = estado_counts.get(e, 0) + 1
+
+    umbrales = sorted(
+        [{"marca": k, "umbral_km": v} for k, v in _UMBRALES_KM.items()],
+        key=lambda x: x["marca"],
+    ) + [{"marca": "OTROS", "umbral_km": _UMBRAL_DEFAULT_KM}]
+
+    return _cache_json("api:pautas", {
+        "snap_ts":      snap_ts,
+        "kpis": {
+            "total_flota":    total,
+            "con_historial":  con_historial,
+            "sin_historial":  total - con_historial,
+            "cobertura_pct":  round(con_historial / total * 100, 1) if total else 0,
+        },
+        "estado_counts": estado_counts,
+        "umbrales":      umbrales,
+        "empresas":      sorted({r["empresa"] for r in rows_out if r["empresa"]}),
+        "rows":          _clean_nans(rows_out),
+    })
+
+
+# ── Route: /api/diagnostico ──────────────────────────────────────────────────
+@app.route("/api/diagnostico")
+@require_auth
+def api_diagnostico():
+    """Análisis agregado de fallas DTC (desde reporte_fallas_*.xlsx).
+
+    Devuelve KPIs, top 15 códigos por frecuencia, desglose por empresa
+    y listado completo de unidades con fallas, enriquecido con el último snapshot.
+    """
+    if (hit := _cache_hit("api:diagnostico")) is not None:
+        return hit
+
+    if not _FALLAS_BY_VIN:
+        return _json({"error": "Sin datos de fallas. Agregue reporte_fallas_*.xlsx en Data/"}, 404)
+
+    # Flatten a lista plana + codigos únicos por VIN
+    codigos_by_vin: dict[str, list] = {}
+    rows_flat: list[dict] = []
+    for vin, fallas in _FALLAS_BY_VIN.items():
+        codigos_by_vin[vin] = list({f.get("tipo_falla") for f in fallas if f.get("tipo_falla")})[:5]
+        for f in fallas:
+            rows_flat.append({
+                "vin":      vin,
+                "codigo":   f.get("tipo_falla") or "Sin descripción",
+                "urgente":  f.get("prioridad") == "Urgente",
+            })
+
+    df_f = pd.DataFrame(rows_flat)
+
+    # ── Enriquecer con snapshot ────────────────────────────────────────────
+    run_id, snap_ts = _latest_run()
+    unit_map: dict[str, dict] = {}
+    if run_id is not None:
+        with engine.connect() as conn:
+            df_snap = pd.read_sql(text("""
+                SELECT su.unit_id, su.vin, su.patente, su.empresa,
+                       COALESCE(
+                           NULLIF(su.modelo,''),
+                           CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                                THEN NULL ELSE su.vehicle_name END
+                       ) AS modelo,
+                       su.taller_cercano_nombre AS taller
+                FROM snapshot_unit su
+                WHERE su.run_id = :run_id
+            """), conn, params={"run_id": run_id})
+        for r in df_snap.itertuples(index=False):
+            info = {
+                "unit_id": _safe_str(r.unit_id),
+                "patente": _safe_str(r.patente),
+                "empresa": _safe_str(r.empresa) or "Sin datos",
+                "modelo":  _safe_str(r.modelo),
+                "taller":  _safe_str(r.taller),
+            }
+            uid = str(r.unit_id or "").strip().upper()
+            vin = str(r.vin     or "").strip().upper()
+            if uid: unit_map[uid] = info
+            if vin: unit_map[vin] = info
+
+    # ── KPIs ───────────────────────────────────────────────────────────────
+    kpis = {
+        "total_fallas":        int(len(df_f)),
+        "unidades_con_fallas": int(df_f["vin"].nunique()),
+        "urgentes":            int(df_f["urgente"].sum()),
+        "codigos_unicos":      int(df_f["codigo"].nunique()),
+    }
+
+    # ── Top códigos (frecuencia) ────────────────────────────────────────────
+    top_df = (df_f.groupby("codigo")
+                  .agg(count=("vin", "size"), urgentes=("urgente", "sum"))
+                  .sort_values("count", ascending=False)
+                  .head(15)
+                  .reset_index())
+    top_codigos = [
+        {"codigo": r.codigo, "count": int(r.count), "urgentes": int(r.urgentes)}
+        for r in top_df.itertuples(index=False)
+    ]
+
+    # ── Por empresa ────────────────────────────────────────────────────────
+    df_f["empresa"] = df_f["vin"].map(
+        lambda v: (unit_map.get(v) or {}).get("empresa") or "Sin datos"
+    )
+    emp_df = (df_f.groupby("empresa")
+                  .agg(fallas=("vin", "size"),
+                       urgentes=("urgente", "sum"),
+                       unidades=("vin", "nunique"))
+                  .sort_values("fallas", ascending=False)
+                  .reset_index())
+    por_empresa = [
+        {"empresa": r.empresa, "fallas": int(r.fallas),
+         "urgentes": int(r.urgentes), "unidades": int(r.unidades)}
+        for r in emp_df.itertuples(index=False)
+    ]
+
+    # ── Listado por unidad ─────────────────────────────────────────────────
+    unit_agg = (df_f.groupby("vin")
+                    .agg(fallas_count=("codigo", "size"), urgentes=("urgente", "sum"))
+                    .reset_index())
+    unit_rows = []
+    for r in unit_agg.itertuples(index=False):
+        info = unit_map.get(r.vin) or {
+            "unit_id": r.vin, "patente": None,
+            "empresa": "Sin datos", "modelo": None, "taller": None,
+        }
+        unit_rows.append({
+            "unit_id":      info["unit_id"],
+            "vin":          r.vin,
+            "patente":      info["patente"],
+            "empresa":      info["empresa"],
+            "modelo":       info["modelo"],
+            "taller":       info["taller"],
+            "fallas_count": int(r.fallas_count),
+            "urgentes":     int(r.urgentes),
+            "prioridad_max": "Urgente" if r.urgentes > 0 else "Seguimiento",
+            "codigos":      codigos_by_vin.get(r.vin, []),
+        })
+    unit_rows.sort(key=lambda x: (-x["urgentes"], -x["fallas_count"]))
+
+    return _cache_json("api:diagnostico", {
+        "snap_ts":     snap_ts,
+        "kpis":        kpis,
+        "top_codigos": top_codigos,
+        "por_empresa": por_empresa,
+        "rows":        unit_rows,
+    })
+
+
+# ── Route: /api/degradados ───────────────────────────────────────────────────
+@app.route("/api/degradados")
+@require_auth
+def api_degradados():
+    """Unidades que empeoraron de estado entre los dos últimos snapshots.
+
+    Compara el estado calculado en el run actual vs el anterior.
+    Solo reporta degradaciones reales (ambos snapshots con telemetría válida):
+    OK→PROXIMO, OK→ATENCION, OK→CRITICO, PROXIMO→ATENCION,
+    PROXIMO→CRITICO, ATENCION→CRITICO.
+    """
+    if (hit := _cache_hit("api:degradados")) is not None:
+        return hit
+
+    run_id, snap_ts = _latest_run()
+    if run_id is None:
+        return _json({"alertas": [], "snap_ts": None, "run_anterior_ts": None, "total": 0})
+
+    with engine.connect() as conn:
+        prev_row = conn.execute(
+            text("SELECT run_id, ts FROM snapshot_run WHERE run_id < :r ORDER BY run_id DESC LIMIT 1"),
+            {"r": run_id},
+        ).fetchone()
+
+    if not prev_row:
+        return _json({"alertas": [], "snap_ts": snap_ts, "run_anterior_ts": None, "total": 0})
+
+    prev_run_id = int(prev_row[0])
+    prev_ts     = str(prev_row[1])
+
+    existing_cols = _get_schema_cols()
+    marca_expr = (
+        "NULLIF(TRIM(COALESCE(su.marca,'')),'')" if "marca" in existing_cols else "NULL::text"
+    )
+
+    with engine.connect() as conn:
+        df = pd.read_sql(text(f"""
+            SELECT su.unit_id, su.vin, su.patente, su.empresa,
+                   COALESCE(
+                       NULLIF(su.modelo,''),
+                       CASE WHEN su.vehicle_name ~ '^[A-HJ-NPR-Z0-9]{{17}}$'
+                            THEN NULL ELSE su.vehicle_name END
+                   ) AS modelo,
+                   su.taller_cercano_nombre AS taller,
+                   su.can_odometer,
+                   su.run_id,
+                   {marca_expr} AS marca
+            FROM snapshot_unit su
+            WHERE su.run_id IN (:run_id, :prev_run_id)
+        """), conn, params={"run_id": run_id, "prev_run_id": prev_run_id})
+
+    if df.empty:
+        return _cache_json("api:degradados", {"alertas": [], "snap_ts": snap_ts,
+                                               "run_anterior_ts": prev_ts, "total": 0})
+
+    df["can_odometer"] = pd.to_numeric(df["can_odometer"], errors="coerce")
+    df["modelo"]       = df["modelo"].fillna("")
+
+    def _calc_estados(slice_df: pd.DataFrame) -> pd.DataFrame:
+        """Calcula estado y km_restantes para cada fila, igual que api_estado_flota."""
+        slice_df  = slice_df.copy()
+        mu        = [_detectar_marca(m) for m in slice_df["modelo"].tolist()]
+        umbrales  = [x[1] for x in mu]
+        odo_arr   = slice_df["can_odometer"].values
+        uid_arr   = slice_df["unit_id"].fillna("").astype(str).str.strip().str.upper().values
+        estados, km_rests = [], []
+        for odo_v, uid, umbral in zip(odo_arr, uid_arr, umbrales):
+            if pd.isna(odo_v) or odo_v <= 0:
+                estados.append("SIN_DATOS"); km_rests.append(None); continue
+            hist   = _HISTORIAL_BY_VIN.get(uid) or {}
+            km_ult = hist.get("km_ult_mant")
+            if km_ult and km_ult > 0:
+                km_rest = round(km_ult + float(umbral) - float(odo_v), 0)
+            else:
+                _, km_rest = _proximo_servicio(float(odo_v), umbral)
+            estados.append(_estado_mantenimiento(km_rest, float(umbral)))
+            km_rests.append(km_rest)
+        slice_df["estado"]      = estados
+        slice_df["km_restantes"] = km_rests
+        return slice_df
+
+    curr_df = _calc_estados(df[df["run_id"] == run_id])
+    prev_df = _calc_estados(df[df["run_id"] == prev_run_id])
+
+    # Rank de severidad: mayor = peor estado
+    _RANK = {"SIN_DATOS": -1, "OK": 0, "PROXIMO": 1, "ATENCION": 2, "CRITICO": 3}
+
+    merged = curr_df[
+        ["unit_id", "vin", "patente", "empresa", "modelo", "taller", "km_restantes", "estado"]
+    ].merge(
+        prev_df[["unit_id", "estado"]].rename(columns={"estado": "estado_anterior"}),
+        on="unit_id", how="inner",
+    )
+
+    # Solo degradaciones donde ambos runs tenían telemetría válida
+    degraded = merged[
+        merged.apply(
+            lambda r: 0 <= _RANK.get(r["estado_anterior"], -1) < _RANK.get(r["estado"], -1),
+            axis=1,
+        )
+    ].copy()
+
+    degraded["_rank"] = degraded["estado"].map(lambda s: _RANK.get(s, -1))
+    degraded = degraded.sort_values(["_rank", "km_restantes"], ascending=[False, True])
+
+    alertas = _clean_nans(
+        degraded[[
+            "unit_id", "vin", "patente", "empresa", "modelo", "taller",
+            "estado_anterior", "estado", "km_restantes",
+        ]].rename(columns={"estado": "estado_actual"}).to_dict("records")
+    )
+
+    return _cache_json("api:degradados", {
+        "alertas":         alertas,
+        "snap_ts":         snap_ts,
+        "run_anterior_ts": prev_ts,
+        "total":           len(alertas),
     })
 
 
