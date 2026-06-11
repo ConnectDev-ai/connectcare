@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   X, Wrench, ClipboardList, AlertTriangle, PlusCircle,
-  Gauge, CalendarDays, ChevronRight,
+  Gauge, CalendarDays, ChevronRight, ChevronDown,
 } from "lucide-react";
 import { fetchUnitHistory, fetchTickets } from "@/lib/api";
 import type { UnidadFlota, MaintenanceRecord, Ticket } from "@/lib/types";
@@ -45,10 +45,11 @@ const TICKET_ESTADO_STYLE: Record<string, string> = {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function UnitDetailPanel({ unit, onClose, onCreateTicket }: Props) {
-  const [history,  setHistory]  = useState<MaintenanceRecord[]>([]);
-  const [tickets,  setTickets]  = useState<Ticket[]>([]);
-  const [loadingH, setLoadingH] = useState(true);
-  const [loadingT, setLoadingT] = useState(true);
+  const [history,    setHistory]    = useState<MaintenanceRecord[]>([]);
+  const [tickets,    setTickets]    = useState<Ticket[]>([]);
+  const [loadingH,   setLoadingH]   = useState(true);
+  const [loadingT,   setLoadingT]   = useState(true);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -199,57 +200,91 @@ export function UnitDetailPanel({ unit, onClose, onCreateTicket }: Props) {
                 {/* Timeline line */}
                 <div className="absolute left-[7px] top-2 bottom-2 w-px bg-line" />
 
-                {history.map((rec, i) => (
-                  <div key={i} className="relative flex gap-3 pb-3">
-                    {/* Dot */}
-                    <div className={cn(
-                      "relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-white",
-                      i === 0 ? "bg-brand-500" : "bg-line",
-                    )} />
+                {history.map((rec, i) => {
+                  const isOpen = expandedIdx === i;
+                  const hasDetalle = !!rec.detalle_trabajo;
+                  return (
+                    <div key={i} className="relative flex gap-3 pb-3">
+                      {/* Dot */}
+                      <div className={cn(
+                        "relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-white",
+                        i === 0 ? "bg-brand-500" : "bg-line",
+                      )} />
 
-                    {/* Content */}
-                    <div className="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {rec.tipo_servicio && (
-                              <span className={cn(
-                                "rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
-                                tipoColor(rec.tipo_servicio),
-                              )}>
-                                {rec.tipo_servicio}
-                              </span>
-                            )}
-                            {rec.pauta_km && (
-                              <span className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700">
-                                Pauta {fmtNum(rec.pauta_km, " km")}
-                              </span>
-                            )}
+                      {/* Content */}
+                      <div className="min-w-0 flex-1 rounded-xl border border-line bg-canvas overflow-hidden">
+                        {/* Header row — siempre visible */}
+                        <button
+                          type="button"
+                          onClick={() => hasDetalle && setExpandedIdx(isOpen ? null : i)}
+                          className={cn(
+                            "w-full px-3 py-2.5 text-left",
+                            hasDetalle && "hover:bg-line/40 transition-colors",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {rec.tipo_servicio && (
+                                  <span className={cn(
+                                    "rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                                    tipoColor(rec.tipo_servicio),
+                                  )}>
+                                    {rec.tipo_servicio}
+                                  </span>
+                                )}
+                                {rec.pauta_km && (
+                                  <span className="rounded-md bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700">
+                                    Pauta {fmtNum(rec.pauta_km, " km")}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 tabular-nums text-sm font-semibold text-ink">
+                                {fmtNum(rec.km_ingreso, " km")}
+                              </p>
+                              {rec.contrato && (
+                                <p className="text-[11px] text-muted">{rec.contrato}</p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-start gap-1.5 text-right">
+                              <div>
+                                {rec.fecha && (
+                                  <p className="flex items-center gap-1 text-[11px] text-muted">
+                                    <CalendarDays className="h-3 w-3" />
+                                    {fmtDate(rec.fecha)}
+                                  </p>
+                                )}
+                                {rec.prox_codigo && (
+                                  <p className="mt-1 text-[10px] text-muted">
+                                    Próx: <span className="font-semibold text-ink">{rec.prox_codigo}</span>
+                                  </p>
+                                )}
+                              </div>
+                              {hasDetalle && (
+                                <ChevronDown className={cn(
+                                  "mt-0.5 h-3.5 w-3.5 shrink-0 text-muted transition-transform",
+                                  isOpen && "rotate-180",
+                                )} />
+                              )}
+                            </div>
                           </div>
-                          <p className="mt-1 tabular-nums text-sm font-semibold text-ink">
-                            {fmtNum(rec.km_ingreso, " km")}
-                          </p>
-                          {rec.contrato && (
-                            <p className="text-[11px] text-muted">{rec.contrato}</p>
-                          )}
-                        </div>
-                        <div className="shrink-0 text-right">
-                          {rec.fecha && (
-                            <p className="flex items-center gap-1 text-[11px] text-muted">
-                              <CalendarDays className="h-3 w-3" />
-                              {fmtDate(rec.fecha)}
+                        </button>
+
+                        {/* Detalle expandible */}
+                        {isOpen && hasDetalle && (
+                          <div className="border-t border-line bg-white px-3 py-2.5">
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                              Trabajo realizado
                             </p>
-                          )}
-                          {rec.prox_codigo && (
-                            <p className="mt-1 text-[10px] text-muted">
-                              Próx: <span className="font-semibold text-ink">{rec.prox_codigo}</span>
+                            <p className="text-xs leading-relaxed text-ink">
+                              {rec.detalle_trabajo}
                             </p>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

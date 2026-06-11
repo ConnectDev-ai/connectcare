@@ -107,12 +107,13 @@ export interface UnitLookupResult {
 // ── Unit history ─────────────────────────────────────────────────────────────
 
 export interface MaintenanceRecord {
-  fecha:         string | null;
-  km_ingreso:    number;
-  tipo_servicio: string | null;
-  pauta_km:      number | null;
-  prox_codigo:   string | null;
-  contrato:      string | null;
+  fecha:           string | null;
+  km_ingreso:      number;
+  tipo_servicio:   string | null;
+  pauta_km:        number | null;
+  prox_codigo:     string | null;
+  contrato:        string | null;
+  detalle_trabajo: string | null;
 }
 
 export interface UnitHistoryResponse {
