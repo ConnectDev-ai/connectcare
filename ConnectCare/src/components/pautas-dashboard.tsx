@@ -343,7 +343,13 @@ export function PautasDashboard() {
 
       {ticketUnit && (
         <CreateTicketModal
-          unit={ticketUnit}
+          initialData={{
+            unit_id: ticketUnit.unit_id,
+            patente: ticketUnit.patente,
+            empresa: ticketUnit.empresa,
+            vin:     ticketUnit.vin,
+            modelo:  ticketUnit.modelo,
+          }}
           onClose={() => setTicketUnit(null)}
           onCreated={() => setTicketUnit(null)}
         />
