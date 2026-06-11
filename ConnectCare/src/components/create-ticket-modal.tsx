@@ -153,17 +153,18 @@ export function CreateTicketModal({ initialData, onClose, onCreated }: Props) {
       onClick={handleBackdrop}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
     >
-      <div className="flex w-full max-w-xl flex-col rounded-2xl border border-line bg-white shadow-2xl">
+      <div className="flex w-full max-w-xl flex-col rounded-2xl border border-line bg-white shadow-2xl max-h-[90vh]">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-line px-6 py-4">
           <h2 className="text-base font-semibold text-ink">Nuevo ticket de mantención</h2>
           <button onClick={onClose} className="rounded-md p-1 text-muted hover:bg-canvas hover:text-ink">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5 overflow-y-auto px-6 py-5">
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-col gap-5 overflow-y-auto px-6 py-5 flex-1 min-h-0">
 
           {/* ── Search ── */}
           <div className="space-y-2">
@@ -383,25 +384,26 @@ export function CreateTicketModal({ initialData, onClose, onCreated }: Props) {
           {saveErr && (
             <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{saveErr}</p>
           )}
+        </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 border-t border-line pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !unit}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
-            >
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Crear ticket
-            </button>
-          </div>
+        {/* Actions — fixed footer, always visible */}
+        <div className="flex shrink-0 justify-end gap-2 border-t border-line px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !unit}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Crear ticket
+          </button>
+        </div>
         </form>
       </div>
     </div>

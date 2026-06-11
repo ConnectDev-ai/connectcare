@@ -12,13 +12,15 @@ import {
   PlusCircle,
   RefreshCw,
   CheckCircle,
+  TrendingUp,
 } from "lucide-react";
-import { fetchEstadoFlota, fetchTicketKpis } from "@/lib/api";
+import { fetchEstadoFlota, fetchTicketKpis, fetchDegradados } from "@/lib/api";
 import type {
   EstadoFlotaResponse,
   TicketKpisResponse,
   UnidadFlota,
   EstadoMantenimiento,
+  DegradadosResponse,
 } from "@/lib/types";
 import { KpiCard } from "@/components/kpi-card";
 import { CreateTicketModal } from "@/components/create-ticket-modal";
@@ -41,17 +43,23 @@ const ESTADO_ORDER: Record<EstadoMantenimiento, number> = {
 // ── component ─────────────────────────────────────────────────────────────────
 
 export function HomeDashboard() {
-  const [flota,   setFlota]   = useState<EstadoFlotaResponse | null>(null);
-  const [tickets, setTickets] = useState<TicketKpisResponse  | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [flota,      setFlota]      = useState<EstadoFlotaResponse | null>(null);
+  const [tickets,    setTickets]    = useState<TicketKpisResponse  | null>(null);
+  const [degradados, setDegradados] = useState<DegradadosResponse  | null>(null);
+  const [loading,    setLoading]    = useState(true);
   const [ticketUnit, setTicketUnit] = useState<UnidadFlota | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [f, t] = await Promise.all([fetchEstadoFlota(), fetchTicketKpis()]);
+      const [f, t, d] = await Promise.all([
+        fetchEstadoFlota(),
+        fetchTicketKpis(),
+        fetchDegradados().catch(() => ({ alertas: [], snap_ts: null, run_anterior_ts: null, total: 0 } as DegradadosResponse)),
+      ]);
       setFlota(f);
       setTickets(t);
+      setDegradados(d);
     } finally {
       setLoading(false);
     }
@@ -312,6 +320,96 @@ export function HomeDashboard() {
           </button>
         </section>
       </div>
+
+      {/* ── Alertas de degradación ── */}
+      {!loading && degradados && degradados.total > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-orange-200 bg-white shadow-sm">
+          {/* Header */}
+          <div className="flex flex-wrap items-center gap-3 border-b border-orange-100 bg-orange-50 px-5 py-4">
+            <TrendingUp className="h-4 w-4 shrink-0 text-orange-600" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-orange-700">Alertas de degradación</h2>
+              <p className="text-xs text-orange-600">
+                {degradados.total} unidad{degradados.total !== 1 ? "es" : ""} empeoraron de estado en el último snapshot
+              </p>
+            </div>
+            {degradados.run_anterior_ts && (
+              <span className="shrink-0 text-xs text-orange-500">
+                vs {fmtDate(degradados.run_anterior_ts)}
+              </span>
+            )}
+          </div>
+
+          {/* Row list */}
+          <div className="divide-y divide-line">
+            {degradados.alertas.slice(0, 10).map((a) => (
+              <div key={a.unit_id} className="group flex items-center gap-4 px-5 py-3 hover:bg-canvas">
+                {/* Unit info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-ink">{a.patente || a.unit_id}</span>
+                  </div>
+                  <p className="truncate text-xs text-muted">
+                    {a.empresa}{a.modelo ? ` · ${a.modelo}` : ""}
+                  </p>
+                </div>
+
+                {/* Estado anterior → actual */}
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className={cn(
+                    "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                    ESTADO_BADGE[a.estado_anterior],
+                  )}>
+                    {a.estado_anterior}
+                  </span>
+                  <ArrowRight className="h-3 w-3 text-muted" />
+                  <span className={cn(
+                    "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                    ESTADO_BADGE[a.estado_actual],
+                  )}>
+                    {a.estado_actual}
+                  </span>
+                </div>
+
+                {/* km restantes */}
+                {a.km_restantes != null && (
+                  <div className="hidden shrink-0 text-right sm:block">
+                    <p className={cn(
+                      "text-sm font-bold tabular-nums",
+                      a.km_restantes < 0 ? "text-critico" : "text-atencion",
+                    )}>
+                      {a.km_restantes < 0
+                        ? `−${fmtNum(Math.abs(a.km_restantes))} km`
+                        : `+${fmtNum(a.km_restantes)} km`}
+                    </p>
+                    <p className="text-[10px] text-muted">
+                      {a.km_restantes < 0 ? "vencido" : "restantes"}
+                    </p>
+                  </div>
+                )}
+
+                {/* Quick ticket button */}
+                <button
+                  onClick={() => setTicketUnit({ unit_id: a.unit_id, vin: a.vin, patente: a.patente, empresa: a.empresa } as UnidadFlota)}
+                  className="shrink-0 rounded-lg border border-line bg-white p-1.5 text-muted opacity-0 shadow-sm transition hover:border-brand-400 hover:text-brand-600 group-hover:opacity-100"
+                  title="Crear ticket"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+
+            {degradados.total > 10 && (
+              <div className="px-5 py-3 text-center text-xs text-muted">
+                +{degradados.total - 10} más ·{" "}
+                <Link href="/estado-flota" className="text-brand-600 hover:underline">
+                  Ver en Estado de flota
+                </Link>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ── Ticket modal ── */}
       {ticketUnit !== null && (

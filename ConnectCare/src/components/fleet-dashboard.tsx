@@ -18,6 +18,7 @@ import type { EstadoFlotaResponse, EstadoMantenimiento, UnidadFlota } from "@/li
 import { cn, fmtNum } from "@/lib/utils";
 import { EstadoBadge } from "@/components/estado-badge";
 import { CreateTicketModal } from "@/components/create-ticket-modal";
+import { UnitDetailPanel } from "@/components/unit-detail-panel";
 
 // ── filter types ──────────────────────────────────────────────────────────────
 
@@ -194,7 +195,8 @@ export function FleetDashboard() {
   const [sortCol, setSortCol] = useState<SortCol>("estado");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const [ticketUnit, setTicketUnit] = useState<UnidadFlota | null>(null);
+  const [ticketUnit,  setTicketUnit]  = useState<UnidadFlota | null>(null);
+  const [detailUnit,  setDetailUnit]  = useState<UnidadFlota | null>(null);
 
   async function load() {
     setLoading(true); setError(null);
@@ -401,9 +403,18 @@ export function FleetDashboard() {
           sortCol={sortCol}
           sortDir={sortDir}
           onSort={handleSortCol}
+          onRowClick={setDetailUnit}
           onCreateTicket={setTicketUnit}
         />
       </div>
+
+      {detailUnit && !ticketUnit && (
+        <UnitDetailPanel
+          unit={detailUnit}
+          onClose={() => setDetailUnit(null)}
+          onCreateTicket={(u) => { setDetailUnit(null); setTicketUnit(u); }}
+        />
+      )}
 
       {ticketUnit && (
         <CreateTicketModal
@@ -463,13 +474,14 @@ function SortIcon({ col, sortCol, sortDir }: { col: SortCol | null; sortCol: Sor
 }
 
 function FleetTable({
-  rows, loading, sortCol, sortDir, onSort, onCreateTicket,
+  rows, loading, sortCol, sortDir, onSort, onRowClick, onCreateTicket,
 }: {
   rows: UnidadFlota[];
   loading: boolean;
   sortCol: SortCol;
   sortDir: SortDir;
   onSort: (col: SortCol) => void;
+  onRowClick: (r: UnidadFlota) => void;
   onCreateTicket: (r: UnidadFlota) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -527,7 +539,8 @@ function FleetTable({
                 return (
                   <div
                     key={r.unit_id || r.vin || vi.index}
-                    className={cn(GRID_COLS, "absolute left-0 top-0 w-full border-b border-line/70 text-sm hover:bg-canvas/60")}
+                    onClick={() => onRowClick(r)}
+                    className={cn(GRID_COLS, "absolute left-0 top-0 w-full cursor-pointer border-b border-line/70 text-sm hover:bg-brand-50/40")}
                     style={{ height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
                     <div className="group/unit min-w-0 px-4">

@@ -104,6 +104,22 @@ export interface UnitLookupResult {
   }>;
 }
 
+// ── Unit history ─────────────────────────────────────────────────────────────
+
+export interface MaintenanceRecord {
+  fecha:         string | null;
+  km_ingreso:    number;
+  tipo_servicio: string | null;
+  pauta_km:      number | null;
+  prox_codigo:   string | null;
+  contrato:      string | null;
+}
+
+export interface UnitHistoryResponse {
+  unit_id: string;
+  history: MaintenanceRecord[];
+}
+
 export interface CreateTicketPayload {
   unit_id: string;
   vin?: string | null;
@@ -154,6 +170,113 @@ export interface UnidadFlota {
   fallas_count: number;
   prioridad_falla: string | null;
   descripcion_falla: string | null;
+}
+
+// ── Pautas de mantención ─────────────────────────────────────────────────────
+
+export interface PautasKpis {
+  total_flota:   number;
+  con_historial: number;
+  sin_historial: number;
+  cobertura_pct: number;
+}
+
+export interface UmbralMarca {
+  marca:     string;
+  umbral_km: number;
+}
+
+export interface PautaUnit {
+  unit_id:          string;
+  vin:              string | null;
+  patente:          string | null;
+  empresa:          string;
+  modelo:           string | null;
+  taller:           string | null;
+  can_odometer:     number | null;
+  marca_detectada:  string;
+  umbral_km:        number;
+  ultimo_serv:      string | null;
+  km_ult_mant:      number | null;
+  prox_serv_codigo: string | null;
+  tipo_servicio:    string | null;
+  contrato:         string | null;
+  fecha_ult_mant:   string | null;
+  km_restantes:     number | null;
+  estado:           EstadoMantenimiento;
+}
+
+export interface PautasResponse {
+  snap_ts:       string | null;
+  kpis:          PautasKpis;
+  estado_counts: Partial<Record<EstadoMantenimiento, number>>;
+  umbrales:      UmbralMarca[];
+  empresas:      string[];
+  rows:          PautaUnit[];
+}
+
+// ── Diagnóstico DTC ──────────────────────────────────────────────────────────
+
+export interface DiagnosticoKpis {
+  total_fallas:        number;
+  unidades_con_fallas: number;
+  urgentes:            number;
+  codigos_unicos:      number;
+}
+
+export interface FaultCode {
+  codigo:   string;
+  count:    number;
+  urgentes: number;
+}
+
+export interface EmpresaFallas {
+  empresa:  string;
+  fallas:   number;
+  urgentes: number;
+  unidades: number;
+}
+
+export interface DiagnosticoUnit {
+  unit_id:      string;
+  vin:          string;
+  patente:      string | null;
+  empresa:      string;
+  modelo:       string | null;
+  taller:       string | null;
+  fallas_count: number;
+  urgentes:     number;
+  prioridad_max: "Urgente" | "Seguimiento";
+  codigos:      string[];
+}
+
+export interface DiagnosticoResponse {
+  snap_ts:     string | null;
+  kpis:        DiagnosticoKpis;
+  top_codigos: FaultCode[];
+  por_empresa: EmpresaFallas[];
+  rows:        DiagnosticoUnit[];
+}
+
+// ── Alertas de degradación ───────────────────────────────────────────────────
+
+export interface DegradadoUnit {
+  unit_id:         string;
+  vin:             string | null;
+  patente:         string | null;
+  empresa:         string | null;
+  modelo:          string | null;
+  taller:          string | null;
+  estado_anterior: EstadoMantenimiento;
+  estado_actual:   EstadoMantenimiento;
+  km_restantes:    number | null;
+}
+
+export interface DegradadosResponse {
+  alertas:         DegradadoUnit[];
+  snap_ts:         string | null;
+  run_anterior_ts: string | null;
+  total:           number;
 }
 
 export interface EstadoFlotaKpis {

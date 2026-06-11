@@ -5,6 +5,10 @@ import type {
   TicketKpisResponse,
   CreateTicketPayload,
   UnitLookupResult,
+  UnitHistoryResponse,
+  DegradadosResponse,
+  DiagnosticoResponse,
+  PautasResponse,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_BASE ?? "/backend";
@@ -46,6 +50,28 @@ export function fetchEstadoFlota(): Promise<EstadoFlotaResponse> {
 // ── Unit lookup ───────────────────────────────────────────────────────────────
 export function lookupUnit(q: string): Promise<UnitLookupResult> {
   return getJson<UnitLookupResult>(`/unit-lookup?q=${encodeURIComponent(q)}`);
+}
+
+// ── Unit history ──────────────────────────────────────────────────────────────
+export function fetchUnitHistory(unitId: string, vin?: string | null): Promise<UnitHistoryResponse> {
+  const p = new URLSearchParams({ unit_id: unitId });
+  if (vin) p.set("vin", vin);
+  return getJson<UnitHistoryResponse>(`/unit-history?${p}`);
+}
+
+// ── Pautas ────────────────────────────────────────────────────────────────────
+export function fetchPautas(): Promise<PautasResponse> {
+  return getJson<PautasResponse>("/pautas");
+}
+
+// ── Diagnóstico ───────────────────────────────────────────────────────────────
+export function fetchDiagnostico(): Promise<DiagnosticoResponse> {
+  return getJson<DiagnosticoResponse>("/diagnostico");
+}
+
+// ── Alertas de degradación ────────────────────────────────────────────────────
+export function fetchDegradados(): Promise<DegradadosResponse> {
+  return getJson<DegradadosResponse>("/degradados");
 }
 
 // ── Tickets ───────────────────────────────────────────────────────────────────

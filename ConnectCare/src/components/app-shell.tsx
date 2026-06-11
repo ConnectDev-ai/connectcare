@@ -27,8 +27,8 @@ const NAV: NavItem[] = [
   { label: "Inicio",         href: "/",             icon: LayoutDashboard, ready: true },
   { label: "Estado de flota",href: "/estado-flota", icon: Gauge,           ready: true },
   { label: "Mantenciones",   href: "/mantenciones", icon: Wrench,          ready: true },
-  { label: "Pautas",         href: "/pautas",        icon: ClipboardList },
-  { label: "Diagnóstico",    href: "/diagnostico",   icon: Activity },
+  { label: "Pautas",         href: "/pautas",        icon: ClipboardList, ready: true },
+  { label: "Diagnóstico",    href: "/diagnostico",   icon: Activity,  ready: true },
   { label: "Talleres",       href: "/talleres",      icon: MapPin },
   { label: "Reportes",       href: "/reportes",      icon: FileBarChart },
   { label: "Configuración",  href: "/configuracion", icon: Settings },
@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       {/* Sidebar */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-line bg-white lg:flex">
-        <div className="flex h-16 items-center border-b border-line px-5">
+        <div className="flex h-20 items-center border-b border-line px-5">
           <ConnectCareLogo />
         </div>
 

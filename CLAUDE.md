@@ -109,7 +109,7 @@ There is no test suite. This is a data pipeline + API project with no automated 
 The project is being split into two distinct frontends that share the **same Flask API + DB** (work in progress on the `newview` branch; brand book in `Marca/`):
 
 - **Connect Flotas** — the fleet **map/coverage** view. Today this is the existing `Scripts/templates/connect_talleres.html` SPA (the `mapa` panel + `/api/data`, `/api/radio-search`, `/api/talleres`).
-- **ConnectCare** (`ConnectCare/`) — the **maintenance ERP** for postventa executives: fleet state, mantenciones, pautas de mantenimiento, fault (DTC) analysis. A separate **Next.js 16 + React 19 + Tailwind v4** app that consumes the Flask API via a `/backend/* → /api/*` rewrite proxy (see `ConnectCare/next.config.ts`). It does **not** touch the DB directly. First screen built: *Inicio · Estado de flota* on `/api/estado-flota`. Run with `cd ConnectCare && npm run dev` (needs the Flask API on :5000). Brand palette: primary green `#008870`, navy `#0A0A28`.
+- **ConnectCare** (`ConnectCare/`) — the **maintenance ERP** for postventa executives: fleet state, mantenciones, pautas de mantenimiento, fault (DTC) analysis. A separate **Next.js 16 + React 19 + Tailwind v4** app that consumes the Flask API via a `/backend/* → /api/*` rewrite proxy (see `ConnectCare/next.config.ts`). It does **not** touch the DB directly. Five routes are fully implemented (see *Implemented routes* in the ConnectCare Architecture section). Run with `cd ConnectCare && npm run dev` (needs the Flask API on :5000). Brand palette: primary green `#008870`, navy `#0A0A28`.
 
 ### ConnectCare Commands
 
@@ -128,11 +128,25 @@ ConnectCare env vars (set in `.env.local` or Vercel dashboard):
 
 **Warning — Next.js 16 breaking changes**: `ConnectCare/AGENTS.md` (loaded as `ConnectCare/CLAUDE.md`) explicitly warns that Next.js 16 has breaking API/convention changes from prior versions. Before writing any Next.js code, consult `node_modules/next/dist/docs/` and heed deprecation notices.
 
-**Implemented routes**: Only `/` is built (`src/app/page.tsx` → `FleetDashboard`). The sidebar shows seven nav items; all except *Inicio* are stubs that display "Pronto" — the routes `/mantenciones`, `/pautas`, `/diagnostico`, `/talleres`, `/reportes`, `/configuracion` have no `page.tsx` files yet.
+**Implemented routes** (as of the `newview` branch):
 
-**Adding a new API call**: Add a typed function to `src/lib/api.ts` using `getJson<T>(path)`. Add the matching response type to `src/lib/types.ts`. Types mirror Flask API payloads exactly — keep them in sync with `web_app.py`.
+| Route | Component | Description |
+|---|---|---|
+| `/` | `HomeDashboard` | Overview: KPI summary cards, critical/attention units, degradation alerts, open ticket summary |
+| `/estado-flota` | `FleetDashboard` | Full fleet table (virtualized), filterable by empresa/marca/estado/taller |
+| `/mantenciones` | `TicketsBoard` | Maintenance ticket kanban/list; create, update, add notes |
+| `/pautas` | `PautasDashboard` | Maintenance schedule; upcoming services filtered by horizon (5k/10k/20k km) |
+| `/diagnostico` | `DiagnosticoDashboard` | DTC fault analysis; top codes, per-empresa breakdown, per-unit fault list |
+
+Still stubs (no `page.tsx`): `/talleres`, `/reportes`, `/configuracion`.
+
+**Adding a new API call**: Add a typed function to `src/lib/api.ts` using `getJson<T>(path)` or `mutate<T>(method, path, body)`. Add the matching response type to `src/lib/types.ts`. Types mirror Flask API payloads exactly — keep them in sync with `web_app.py`.
 
 **Large data tables**: Use `@tanstack/react-virtual` (`useVirtualizer`) as in `FleetDashboard`. Fix `ROW_H = 64` px per row and share a single CSS `grid-cols-[...]` template string between the sticky header and the virtualized body so columns stay aligned.
+
+**Shared utilities** (`src/lib/utils.ts`): `cn(...classes)` — Tailwind class merge (clsx + tailwind-merge); `fmtNum(n, suffix?)` — `es-CL` thousands-separated number, returns `"—"` for null; `fmtDate(iso)` — short date ("12 jun 2025"); `fmtDateTime(iso)` — date + time ("12 jun · 14:35"); `initials(name)` — up to 2-char initials from a name or email.
+
+**Slide-over detail panel**: `UnitDetailPanel` is a right-side drawer used by `FleetDashboard` and `HomeDashboard`. It accepts a `unit_id` + `vin`, calls `/api/unit-lookup` and `/api/unit-history`, and renders maintenance history with a create-ticket shortcut.
 
 **Tailwind v4 design tokens**: There is no `tailwind.config.js`. All custom tokens are declared via `@theme` in `src/app/globals.css`:
 
@@ -224,6 +238,11 @@ Three maintenance tables created by `_ensure_ticket_tables()` at `web_app.py` st
 | `GET /api/estado-flota` | Maintenance state from OBD odometer vs brand thresholds, merged with DTC faults |
 | `GET /api/export/<tipo>` | Full CSV download: `tipo` must be `units`, `detalle`, `cobertura`, or `zonas` — use instead of `/api/detalle` for complete data |
 | `GET /api/talleres` | List of all active talleres from `dim_taller` |
+| `GET /api/unit-lookup` | Search a unit by VIN/patente (`?q=`); returns unit metadata + maintenance state |
+| `GET /api/unit-history` | Maintenance records for a unit (`?unit_id=&vin=`); used by the detail panel |
+| `GET /api/pautas` | Maintenance schedule: upcoming/overdue services, estado counts, per-brand thresholds, empresa list |
+| `GET /api/diagnostico` | DTC fault analysis: top fault codes, per-empresa breakdown, per-unit fault list |
+| `GET /api/degradados` | Units whose maintenance state worsened (`CRITICO`/`ATENCION` upgraded) since the previous run |
 | `GET/POST /api/tickets` | List tickets (supports `?unit_id=`, `?estado=vencido`); create a new ticket |
 | `GET/PATCH /api/tickets/<id>` | Get or update a single ticket |
 | `POST /api/tickets/<id>/notes` | Add a note to a ticket |
