@@ -458,8 +458,8 @@ const COL_HEADERS: { label: string; col: SortCol | null; align?: string }[] = [
   { label: "Empresa",       col: "empresa"      },
   { label: "Modelo",        col: "modelo"       },
   { label: "Estado",        col: "estado"       },
-  { label: "Odómetro",      col: "odometro",    align: "text-right" },
   { label: "Último serv.",  col: "km_ult_mant", align: "text-center" },
+  { label: "Odómetro",      col: "odometro",    align: "text-right" },
   { label: "Próx. servicio",col: "km_restantes",align: "text-right" },
   { label: "Fallas",        col: "fallas"       },
   { label: "Taller",        col: "taller"       },
@@ -562,8 +562,8 @@ function FleetTable({
                       {r.marca && <div className="truncate text-[11px] text-muted">{r.marca}</div>}
                     </div>
                     <div className="px-4"><EstadoBadge estado={r.estado} /></div>
-                    <div className="px-4 text-right tabular-nums text-ink">{fmtNum(r.can_odometer, " km")}</div>
                     <div className="px-4 text-center"><UltimoServicio r={r} /></div>
+                    <div className="px-4 text-right tabular-nums text-ink">{fmtNum(r.can_odometer, " km")}</div>
                     <div className="px-4 text-right"><ProximoServicio r={r} /></div>
                     <div className="px-4"><FallasCell r={r} /></div>
                     <div className="min-w-0 px-4">
