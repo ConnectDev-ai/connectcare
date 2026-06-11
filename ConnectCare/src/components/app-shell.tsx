@@ -30,7 +30,7 @@ const NAV: NavItem[] = [
   { label: "Pautas",         href: "/pautas",        icon: ClipboardList, ready: true },
   { label: "Diagnóstico",    href: "/diagnostico",   icon: Activity,  ready: true },
   { label: "Talleres",       href: "/talleres",      icon: MapPin },
-  { label: "Reportes",       href: "/reportes",      icon: FileBarChart },
+  { label: "Reportes",       href: "/reportes",      icon: FileBarChart, ready: true },
   { label: "Configuración",  href: "/configuracion", icon: Settings },
 ];
 

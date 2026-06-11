@@ -105,3 +105,15 @@ export function updateTicket(
 export function addTicketNote(id: number, body: string): Promise<{ ok: boolean }> {
   return mutate<{ ok: boolean }>("POST", `/tickets/${id}/notes`, { body });
 }
+
+// ── CSV blob downloads (Flask /api/export/<tipo>) ─────────────────────────────
+export async function downloadFlaskExport(tipo: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}/export/${tipo}`, { cache: "no-store" });
+  if (!res.ok) throw new ApiError(res.status, `Export ${tipo} respondió ${res.status}`);
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}

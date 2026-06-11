@@ -27,6 +27,29 @@ export function fmtDateTime(iso: string | null | undefined): string {
   return `${date} · ${time}`;
 }
 
+/** Convert an array of objects to a CSV string (UTF-8 with BOM for Excel). */
+export function toCsv(rows: Record<string, unknown>[]): string {
+  if (!rows.length) return "";
+  const keys = Object.keys(rows[0]);
+  const esc = (v: unknown) => {
+    if (v == null) return "";
+    const s = Array.isArray(v) ? v.join("; ") : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [keys.join(","), ...rows.map((r) => keys.map((k) => esc(r[k])).join(","))].join("\n");
+}
+
+/** Trigger a CSV file download from an array of objects. */
+export function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
+  const blob = new Blob(["﻿" + toCsv(rows)], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
 /** Return initials from a name/email string (max 2 chars). */
 export function initials(name: string | null | undefined): string {
   if (!name) return "?";
