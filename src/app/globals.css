@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/*
+  ConnectCare brand theme.
+  Palette sampled from the brand book (Marca/MarcaConnect 1 1.pdf, p.6):
+    primary green  #008870  ·  wordmark navy  #0A0A28  ·  canvas  #F6F8F7
+*/
+@theme {
+  --color-brand-50: #e7f5f1;
+  --color-brand-100: #c4e8df;
+  --color-brand-200: #93d6c6;
+  --color-brand-300: #5cbfa9;
+  --color-brand-400: #25a78c;
+  --color-brand-500: #008870; /* primary */
+  --color-brand-600: #007a64;
+  --color-brand-700: #006052;
+  --color-brand-800: #00463b;
+  --color-brand-900: #062f28;
+
+  --color-navy: #0a0a28;
+  --color-ink: #0f1729;
+  --color-muted: #5b6b7a;
+  --color-canvas: #f6f8f7;
+  --color-line: #e6ebe9;
+
+  /* Maintenance-state semantics */
+  --color-critico: #dc2626;
+  --color-atencion: #d97706;
+  --color-proximo: #2563eb;
+  --color-ok: #008870;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+/* Thin, branded scrollbars to match the dashboard mockup */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cdd6d2 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cdd6d2;
+  border-radius: 9999px;
+}

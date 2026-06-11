@@ -1,0 +1,3808 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Fleet Intelligence | Kaufmann</title>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif:ital,wght@0,400;0,700;0,900;1,400&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+
+<!-- MapLibre GL -->
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet"/>
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+
+<!-- deck.gl standalone -->
+<script src="https://unpkg.com/deck.gl@9/dist.min.js"></script>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+
+<!-- Supabase Auth -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script>
+tailwind.config = {
+    darkMode: "class",
+    theme: {
+        extend: {
+            colors: {
+                "primary":                  "#f2be8c",
+                "on-primary":               "#482904",
+                "primary-dim":              "#d4a373",
+                "surface":                  "#131313",
+                "surface-dim":              "#0e0e0e",
+                "surface-container-low":    "#1c1b1b",
+                "surface-container":        "#201f1f",
+                "surface-container-high":   "#2a2a2a",
+                "surface-container-highest":"#353534",
+                "surface-variant":          "#353534",
+                "surface-bright":           "#3a3939",
+                "on-surface":               "#e5e2e1",
+                "on-surface-variant":       "#d4c4b7",
+                "on-surface-dim":           "#9c8e82",
+                "outline":                  "#9c8e82",
+                "outline-variant":          "#50453b",
+                "tertiary":                 "#a7ccea",
+                "background":               "#131313",
+            },
+        },
+    },
+};
+</script>
+
+<style>
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+:root { color-scheme: dark; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body { font-family: 'Manrope', sans-serif; background: #131313; color: #e5e2e1; }
+.serif { font-family: 'Noto Serif', serif; }
+.icon { font-family: 'Material Symbols Outlined'; font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; font-size: 20px; line-height: 1; user-select: none; }
+.icon-fill { font-variation-settings: 'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #131313; }
+::-webkit-scrollbar-thumb { background: #353534; border-radius: 10px; }
+
+/* ── Glass ── */
+
+.glass { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+/* ── Map container ── */
+#deck-container { position: absolute; inset: 0; }
+#deck-container canvas { position: absolute !important; inset: 0 !important; }
+
+/* ── MapLibre attribution ── */
+.maplibregl-ctrl-attrib { opacity: 0.25 !important; font-size: 9px !important; }
+.maplibregl-ctrl-attrib a { color: #9c8e82 !important; }
+
+/* ── Nav active state ── */
+.nav-link { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            color: rgba(229,226,225,0.55); font-weight: 500; font-size: 14px;
+            border-radius: 6px; transition: all .18s; text-decoration: none; cursor: pointer; }
+.nav-link:hover { color: #e5e2e1; background: rgba(53,53,52,0.5); }
+.nav-link.active { background: #353534; color: #f2be8c; font-weight: 700;
+                   border-radius: 0 6px 6px 0; border-left: 3px solid #f2be8c; padding-left: 13px; }
+
+/* ── Tool button ── */
+.tool-btn { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);
+            background: rgba(53,53,52,0.7); backdrop-filter: blur(20px);
+            color: rgba(229,226,225,0.6); cursor: pointer; transition: all .18s; }
+.tool-btn:hover { color: #f2be8c; background: rgba(53,53,52,0.95); }
+.tool-btn.active { color: #f2be8c; border-color: rgba(242,190,140,0.3); }
+
+/* ── KPI strip card ── */
+.kpi-card { min-width: 150px; flex: 1; background: rgba(53,53,52,0.55);
+            border: 1px solid rgba(80,69,59,0.25); border-radius: 8px; padding: 12px 14px; }
+
+/* ── Mobile sidebar overlay ── */
+#mobile-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+                  z-index:200; backdrop-filter:blur(4px); }
+#mobile-overlay.open { display:block; }
+#mobile-sidebar { position:fixed; top:0; left:0; height:100%; width:272px; z-index:201;
+                  background:#1c1b1b; border-right:1px solid rgba(53,53,52,0.3);
+                  transform:translateX(-100%); transition:transform .25s ease; display:flex; flex-direction:column; }
+#mobile-sidebar.open { transform:translateX(0); }
+
+/* ── Section card responsive ── */
+@media (max-width: 640px) {
+    .section-card { padding: 14px 14px; border-radius: 10px; }
+}
+
+/* ── Deck.gl custom tooltip ── */
+#deck-tooltip {
+    position: absolute; pointer-events: none; z-index: 50; display: none;
+    font-family: 'Manrope', sans-serif;
+}
+
+/* ── Page panels ── */
+.page-panel { display: none; position: absolute; inset: 0; }
+#page-mapa.active { display: flex; flex-direction: column; }
+.page-panel.active:not(#page-mapa) { display: block; overflow-y: auto; }
+
+/* ── Data table ── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table thead tr { background: #0e0e0e; }
+.data-table thead th { padding: 10px 14px; text-align: left; font-size: 10px;
+                        font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+                        color: rgba(229,226,225,0.4); border-bottom: 1px solid rgba(53,53,52,0.6); }
+.data-table tbody tr:nth-child(even) { background: rgba(28,27,27,0.7); }
+.data-table tbody tr:hover { background: rgba(42,42,42,0.8) !important; }
+.data-table tbody td { padding: 9px 14px; border-bottom: 1px solid rgba(53,53,52,0.25);
+                        color: rgba(229,226,225,0.8); white-space: nowrap; }
+
+/* ── Scrollable table wrappers ── */
+.scrollable-table-wrap { overflow-x: auto; overflow-y: auto; max-height: 380px; }
+.scrollable-table-wrap .data-table thead th { position: sticky; top: 0; z-index: 1; background: #0e0e0e; }
+
+/* ── Form controls ── */
+select, input[type="text"], input[type="search"] {
+    background: #201f1f !important; border: 1px solid rgba(53,53,52,0.6) !important;
+    border-radius: 6px; padding: 8px 12px; color: #e5e2e1 !important;
+    font-family: 'Manrope', sans-serif; font-size: 13px; outline: none;
+    width: 100%; transition: border-color .18s;
+    color-scheme: dark;
+}
+select option {
+    background: #201f1f;
+    color: #e5e2e1;
+}
+select option:hover, select option:focus, select option:checked {
+    background: #2e2d2d;
+    color: #f2be8c;
+}
+select:focus, input[type="text"]:focus { border-color: rgba(242,190,140,0.4) !important; }
+
+/* ── Section card ── */
+.section-card { background: #1c1b1b; border: 1px solid rgba(53,53,52,0.3);
+                border-radius: 12px; padding: 20px 24px; }
+
+/* ── Loading spinner ── */
+.loading-state { display: flex; align-items: center; justify-content: center;
+                  height: 240px; color: rgba(229,226,225,0.2);
+                  font-size: 12px; font-family: monospace; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.animate-pulse { animation: pulse 1.8s infinite; }
+</style>
+</head>
+
+<body class="flex overflow-hidden" style="height:100vh">
+
+<!-- ══════════════════════════════════
+     AUTH OVERLAY
+══════════════════════════════════ -->
+<div id="auth-overlay" style="position:fixed;inset:0;z-index:9999;background:#131313;display:flex;align-items:center;justify-content:center;font-family:'Manrope',sans-serif;">
+  <div style="width:100%;max-width:380px;padding:0 24px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <img src="/logo.png" alt="Kaufmann" style="height:64px;object-fit:contain;" onerror="this.style.display='none'" />
+      <div style="margin-top:12px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#9c8e82;">Fleet Intelligence · Connect Latam</div>
+    </div>
+    <div style="background:#201f1f;border:1px solid #353534;border-radius:16px;padding:32px;">
+      <h2 style="font-size:20px;font-weight:700;color:#e5e2e1;margin:0 0 6px;">Iniciar sesión</h2>
+      <p style="font-size:13px;color:#9c8e82;margin:0 0 24px;">Acceso exclusivo equipo Connect</p>
+      <div id="auth-error" style="display:none;background:rgba(233,47,49,0.1);border:1px solid rgba(233,47,49,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#f87171;margin-bottom:16px;"></div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9c8e82;margin-bottom:6px;">Correo</label>
+        <input id="auth-email" type="email" placeholder="tu@email.com" autocomplete="email"
+          style="width:100%;background:#131313;border:1px solid #353534;border-radius:8px;padding:10px 13px;font-size:14px;color:#e5e2e1;font-family:inherit;outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='#f2be8c'" onblur="this.style.borderColor='#353534'" />
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9c8e82;margin-bottom:6px;">Contraseña</label>
+        <input id="auth-password" type="password" placeholder="••••••••" autocomplete="current-password"
+          style="width:100%;background:#131313;border:1px solid #353534;border-radius:8px;padding:10px 13px;font-size:14px;color:#e5e2e1;font-family:inherit;outline:none;box-sizing:border-box;"
+          onfocus="this.style.borderColor='#f2be8c'" onblur="this.style.borderColor='#353534'" />
+      </div>
+      <button id="auth-btn" onclick="doLogin()"
+        style="width:100%;background:#f2be8c;color:#482904;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:background .2s;"
+        onmouseover="this.style.background='#d4a373'" onmouseout="this.style.background='#f2be8c'">
+        Ingresar
+      </button>
+    </div>
+    <p style="text-align:center;font-size:11px;color:#50453b;margin-top:16px;">¿Problemas para acceder? Contacta a tu administrador.</p>
+  </div>
+</div>
+
+<!-- Mobile overlay + sidebar -->
+<div id="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div id="mobile-sidebar">
+    <div class="px-6 pt-6 pb-4 flex items-center justify-between border-b border-[#353534]/25">
+        <div>
+            <img src="/logo.png" alt="Logo Kaufmann" class="w-full object-contain" style="max-height:112px;"/>
+        </div>
+        <button onclick="closeMobileMenu()" class="text-[#e5e2e1]/40 hover:text-[#e5e2e1]/80">
+            <span class="icon">close</span>
+        </button>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        <a class="nav-link" onclick="setPage('ejecutivo',this);closeMobileMenu()">
+            <span class="icon">dashboard</span> Vista Ejecutiva
+        </a>
+        <a class="nav-link" onclick="setPage('detalle',this);closeMobileMenu()">
+            <span class="icon">directions_bus</span> Detalle Unidades
+        </a>
+        <a class="nav-link" onclick="setPage('tendencia',this);closeMobileMenu()">
+            <span class="icon">trending_up</span> Tendencia Semanal
+        </a>
+        <a class="nav-link" onclick="setPage('mapa',this);closeMobileMenu()">
+            <span class="icon icon-fill">build</span> Connect Talleres
+        </a>
+        <a class="nav-link" onclick="setPage('reportes',this);closeMobileMenu()">
+            <span class="icon">assessment</span> Reportes
+        </a>
+        <a class="nav-link" onclick="setPage('estado-flota',this);closeMobileMenu()">
+            <span class="icon">build_circle</span> Estado de Flota
+        </a>
+    </nav>
+    <div class="px-5 pb-6">
+        <button onclick="downloadReport();closeMobileMenu()"
+            class="w-full py-3 rounded-lg font-bold text-xs tracking-[0.15em] uppercase
+                   flex items-center justify-center gap-2 bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+            Generar Reporte <span class="icon" style="font-size:16px;">download</span>
+        </button>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════
+     SIDEBAR (desktop)
+════════════════════════════════════════════════ -->
+<aside class="hidden md:flex flex-col h-screen flex-shrink-0 bg-[#1c1b1b] border-r border-[#353534]/25"
+       style="width:272px;">
+
+    <!-- Brand -->
+    <div class="px-5 pt-8 mb-8">
+        <div class="mb-3">
+            <img src="/logo.png" alt="Logo Kaufmann" class="w-full object-contain" style="max-height:160px;"/>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 px-3 space-y-0.5">
+        <a class="nav-link" onclick="setPage('ejecutivo',this)">
+            <span class="icon">dashboard</span> Vista Ejecutiva
+        </a>
+        <a class="nav-link" onclick="setPage('detalle',this)">
+            <span class="icon">directions_bus</span> Detalle Unidades
+        </a>
+        <a class="nav-link" onclick="setPage('tendencia',this)">
+            <span class="icon">trending_up</span> Tendencia Semanal
+        </a>
+        <a class="nav-link active" id="nav-mapa" onclick="setPage('mapa',this)">
+            <span class="icon icon-fill">build</span> Connect Talleres
+        </a>
+        <a class="nav-link" onclick="setPage('reportes',this)">
+            <span class="icon">assessment</span> Reportes
+        </a>
+        <a class="nav-link" onclick="setPage('estado-flota',this)">
+            <span class="icon">build_circle</span> Estado de Flota
+        </a>
+    </nav>
+
+    <!-- Sidebar KPIs -->
+    <div class="px-5 mb-4">
+        <div class="text-[9px] text-[#e5e2e1]/25 font-bold tracking-[0.18em] uppercase mb-2 px-1">
+            KPIs del Snapshot
+        </div>
+        <div class="space-y-1.5" id="sidebar-kpis">
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Talleres activos</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-talleres">—</span>
+            </div>
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Dentro del radio</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-pct">—</span>
+            </div>
+            <div class="flex justify-between items-center px-3 py-2 bg-[#201f1f] rounded-md">
+                <span class="text-xs text-[#e5e2e1]/45">Mayor carga</span>
+                <span class="serif text-sm font-bold text-[#f2be8c]" id="sb-top-n">—</span>
+            </div>
+            <div class="px-3 py-2 bg-[#201f1f] rounded-md">
+                <div class="text-[9px] text-[#e5e2e1]/30 uppercase tracking-wide mb-0.5">Top taller</div>
+                <div class="text-xs text-[#e5e2e1]/70 font-medium truncate" id="sb-top-name">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generate Report button -->
+    <div class="px-5 pb-8">
+        <button onclick="downloadReport()"
+            class="w-full py-3.5 rounded-lg font-bold text-xs tracking-[0.15em] uppercase
+                   flex items-center justify-center gap-2 transition-all active:scale-95
+                   bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+            Generar Reporte
+            <span class="icon" style="font-size:16px;">download</span>
+        </button>
+    </div>
+</aside>
+
+
+<!-- ════════════════════════════════════════════════
+     MAIN
+════════════════════════════════════════════════ -->
+<main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#131313]">
+
+    <!-- ── Top Header ── -->
+    <header class="flex-shrink-0 z-40 flex justify-between items-center px-4 md:px-8 h-[60px] md:h-[72px]
+                   bg-[#131313]/90 backdrop-blur-md border-b border-[#353534]/20
+                   shadow-xl shadow-[#f2be8c]/[0.03]">
+        <div class="flex items-center gap-3 md:gap-5 min-w-0">
+            <!-- Hamburger (mobile only) -->
+            <button class="md:hidden flex-shrink-0 text-[#e5e2e1]/60 hover:text-[#f2be8c] transition-colors"
+                    onclick="openMobileMenu()">
+                <span class="icon">menu</span>
+            </button>
+            <h1 class="serif text-lg md:text-2xl font-black text-[#f2be8c] tracking-tight truncate"
+                id="page-title">Connect Talleres</h1>
+            <div class="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full
+                        bg-[#2a2a2a] border border-[#50453b]/30">
+                <span class="w-2 h-2 rounded-full bg-green-500" style="animation:pulse 2s infinite"></span>
+                <span class="text-[10px] font-bold tracking-[0.15em] text-[#e5e2e1]/50 uppercase">
+                    Live Intelligence Active
+                </span>
+            </div>
+            <span class="text-[10px] font-mono text-[#e5e2e1]/25" id="snap-ts-header"></span>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="text-[#e5e2e1]/50 hover:text-[#f2be8c] transition-colors p-1">
+                <span class="icon">notifications</span>
+            </button>
+            <button class="text-[#e5e2e1]/50 hover:text-[#f2be8c] transition-colors p-1">
+                <span class="icon">settings</span>
+            </button>
+            <!-- User menu -->
+            <div class="relative ml-1" id="user-menu-wrap">
+                <button onclick="toggleUserMenu()"
+                        class="w-9 h-9 rounded-full bg-[#353534] border border-[#f2be8c]/20
+                               flex items-center justify-center hover:border-[#f2be8c]/50 transition-colors"
+                        id="user-avatar">
+                    <span class="icon text-[#f2be8c]/60">person</span>
+                </button>
+                <div id="user-dropdown" style="display:none;"
+                     class="absolute right-0 top-11 w-56 bg-[#201f1f] border border-[#353534]
+                            rounded-xl shadow-2xl z-50 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-[#353534]/60">
+                        <div class="text-xs font-bold text-[#f2be8c] truncate" id="user-email-display">—</div>
+                        <div class="text-[10px] text-[#9c8e82] mt-0.5">Equipo Connect</div>
+                    </div>
+                    <button onclick="handleLogout()"
+                            class="w-full flex items-center gap-3 px-4 py-3 text-sm
+                                   text-[#e5e2e1]/70 hover:text-[#f2be8c] hover:bg-[#2a2a2a] transition-colors">
+                        <span class="icon" style="font-size:18px;">logout</span>
+                        Cerrar sesión
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ── Content Area (pages switch here) ── -->
+    <div class="flex-1 relative overflow-hidden">
+
+        <!-- ══════════════════════════════════
+             PAGE: MAPA (Connect Talleres)
+        ══════════════════════════════════ -->
+        <div id="page-mapa" class="page-panel active">
+
+            <!-- KPI Strip -->
+            <section class="flex-shrink-0 flex gap-3 px-6 py-4 bg-[#1c1b1b] border-b border-[#353534]/20
+                            overflow-x-auto" style="scrollbar-width:thin">
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Unidades únicas snapshot
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-units">—</span>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Unidades en hexbin
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-hexbin">—</span>
+                    </div>
+                </div>
+                <div class="kpi-card border-l-2 border-[#f2be8c]/20">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Hex radius (m)
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#a7ccea]" id="kpi-radius">5,000</span>
+                        <input type="range" min="500" max="20000" step="500" value="5000"
+                               id="radius-slider" oninput="onRadiusChange(this.value)"
+                               class="w-20 accent-[#a7ccea] cursor-pointer"/>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        % Dentro del radio
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-green-400" id="kpi-pct">—</span>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">
+                        Talleres activos
+                    </div>
+                    <div class="flex items-baseline gap-2">
+                        <span class="serif text-2xl font-bold text-[#f2be8c]" id="kpi-talleres">—</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Map viewport -->
+            <div class="flex-1 relative overflow-hidden">
+
+                <!-- deck.gl canvas -->
+                <div id="deck-container"></div>
+
+                <!-- Country filter pill -->
+                <div class="absolute top-3 right-14 md:top-5 md:right-20 z-30 flex gap-1.5" id="country-filter-bar">
+                    <button id="cf-all" onclick="setCountryFilter('all')"
+                            class="cf-btn active flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#f2be8c]/15 border-[#f2be8c]/40 text-[#f2be8c]">
+                        <span style="font-size:14px">🌎</span> Todos
+                    </button>
+                    <button id="cf-chile" onclick="setCountryFilter('chile')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇨🇱</span> Chile
+                    </button>
+                    <button id="cf-colombia" onclick="setCountryFilter('colombia')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇨🇴</span> Colombia
+                    </button>
+                    <button id="cf-peru" onclick="setCountryFilter('peru')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇵🇪</span> Perú
+                    </button>
+                    <button id="cf-paraguay" onclick="setCountryFilter('paraguay')"
+                            class="cf-btn flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold
+                                   border transition-all duration-150 select-none
+                                   bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50 hover:text-[#e5e2e1]">
+                        <span style="font-size:14px">🇵🇾</span> Paraguay
+                    </button>
+                </div>
+
+                <!-- Custom tooltip -->
+                <div id="deck-tooltip">
+                    <div class="glass bg-[#131313]/80 border border-white/[0.08] rounded-xl p-4 shadow-2xl"
+                         style="min-width:220px">
+                        <div class="serif text-[#f2be8c] font-bold text-sm mb-0.5" id="tt-nombre">—</div>
+                        <div class="text-[10px] text-[#e5e2e1]/35 uppercase tracking-[0.12em] mb-3">
+                            Sucursal Kaufmann
+                        </div>
+                        <div class="flex gap-5">
+                            <div>
+                                <div class="serif text-2xl font-bold text-[#e5e2e1]" id="tt-asignadas">—</div>
+                                <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">unidades asignadas</div>
+                            </div>
+                            <div class="border-l border-[#353534] pl-5">
+                                <div class="serif text-2xl font-bold text-[#a7ccea]" id="tt-pct">—</div>
+                                <div class="text-[10px] text-[#e5e2e1]/35 mt-0.5">de la flota</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Floating KPI panel (top-left) -->
+                <div class="absolute top-3 left-3 md:top-5 md:left-5 z-30" style="width:min(240px,calc(100vw - 100px))">
+                    <div class="glass bg-[#131313]/78 border border-white/[0.06] rounded-xl p-5 shadow-2xl relative">
+                        <div id="fl-loading"
+                             class="absolute inset-0 rounded-xl flex items-center justify-center z-10"
+                             style="background:rgba(19,19,19,0.65)">
+                            <div class="text-[10px] text-[#e5e2e1]/30 font-mono animate-pulse">
+                                Cargando datos...
+                            </div>
+                        </div>
+                        <h3 class="serif text-[#f2be8c] font-bold text-base mb-4">Métricas Críticas</h3>
+                        <div class="space-y-2.5">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Unidades en Cobertura</span>
+                                <span class="font-bold text-sm" id="fl-units">—</span>
+                            </div>
+                            <div class="h-px" style="background:rgba(53,53,52,0.6)"></div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Talleres Activos</span>
+                                <span class="font-bold text-sm text-[#f2be8c]" id="fl-talleres">—</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">% Dentro del Radio</span>
+                                <span class="font-bold text-sm" id="fl-pct">—</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-[#e5e2e1]/45">Mayor Carga</span>
+                                <div class="text-right">
+                                    <div class="font-bold text-sm" id="fl-top-n">—</div>
+                                    <div class="text-[9px] text-[#f2be8c]/55">unidades</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Legend (bottom-left) -->
+                <div class="absolute z-30 hidden sm:block" style="bottom:20px;left:20px">
+                    <div class="glass bg-[#1c1b1b]/88 border border-white/[0.05] p-4 rounded-lg">
+                        <div class="text-[9px] text-[#e5e2e1]/40 font-bold tracking-[0.18em] uppercase mb-2">
+                            Densidad de Unidades
+                        </div>
+                        <div class="flex items-center gap-1 mb-1.5">
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.15)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.40)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,0.72)"></div>
+                            <div class="w-8 h-2.5 rounded-sm" style="background:rgba(242,190,140,1.00)"></div>
+                        </div>
+                        <div class="flex justify-between text-[8px] text-[#e5e2e1]/25 uppercase tracking-wide">
+                            <span>Baja</span><span>Crítica</span>
+                        </div>
+                        <div class="mt-3 pt-3 space-y-1.5" style="border-top:1px solid rgba(53,53,52,0.6)">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-coverage" checked
+                                       onchange="toggleLayer('coverage')"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Radio 100 km</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-labels"
+                                       onchange="toggleLayer('labels')"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Etiquetas talleres</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="chk-3d" checked
+                                       onchange="toggle3D()"
+                                       class="accent-[#f2be8c] w-3 h-3"/>
+                                <span class="text-[10px] text-[#e5e2e1]/50">Vista 3D</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tool panel (top-right) -->
+                <div class="absolute top-5 right-5 z-30 flex flex-col gap-2">
+                    <button class="tool-btn" onclick="zoomIn()" title="Acercar">
+                        <span class="icon">add</span>
+                    </button>
+                    <button class="tool-btn" onclick="zoomOut()" title="Alejar">
+                        <span class="icon">remove</span>
+                    </button>
+                    <button class="tool-btn" onclick="resetView()" title="Vista inicial">
+                        <span class="icon">center_focus_strong</span>
+                    </button>
+                    <div style="height:4px"></div>
+                    <button class="tool-btn" onclick="togglePitch()" title="Rotar vista" id="btn-pitch">
+                        <span class="icon">3d_rotation</span>
+                    </button>
+                    <div style="height:4px"></div>
+                    <button class="tool-btn" onclick="toggleSearchPanel()" title="Búsqueda por dirección" id="btn-search">
+                        <span class="icon">search</span>
+                    </button>
+                </div>
+
+                <!-- ── Search Panel ── -->
+                <div id="search-panel" class="absolute z-30"
+                     style="top:20px; right:76px; width:min(300px, calc(100vw - 96px)); display:none;">
+                    <div class="glass bg-[#131313]/88 border border-white/[0.07] rounded-xl shadow-2xl overflow-hidden">
+
+                        <!-- Header -->
+                        <div class="flex items-center justify-between px-5 pt-5 pb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="icon text-[#f2be8c]" style="font-size:18px">search</span>
+                                <span class="serif text-[#f2be8c] font-bold text-sm">Búsqueda por Dirección</span>
+                            </div>
+                            <button onclick="closeSearchPanel()"
+                                    class="text-[#e5e2e1]/30 hover:text-[#e5e2e1]/70 transition-colors">
+                                <span class="icon" style="font-size:18px">close</span>
+                            </button>
+                        </div>
+
+                        <!-- Form -->
+                        <div class="px-5 pb-4 space-y-3">
+                            <div>
+                                <label class="text-[9px] font-bold tracking-[0.15em] uppercase text-[#e5e2e1]/35 block mb-1.5">
+                                    Dirección
+                                </label>
+                                <div class="flex gap-2">
+                                    <input id="search-address" type="text"
+                                           placeholder="Ej: Antofagasta o Av. Grecia 750, Antofagasta"
+                                           onkeydown="if(event.key==='Enter') runRadioSearch()"
+                                           class="flex-1 text-[12px]"/>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-[9px] font-bold tracking-[0.15em] uppercase text-[#e5e2e1]/35 block mb-1.5">
+                                    Radio de búsqueda:
+                                    <span id="search-radius-label" class="text-[#a7ccea] ml-1">100 km</span>
+                                </label>
+                                <input type="range" min="5" max="500" step="5" value="100"
+                                       id="search-radius-slider"
+                                       oninput="document.getElementById('search-radius-label').textContent=this.value+' km'"
+                                       class="w-full accent-[#a7ccea] cursor-pointer"/>
+                            </div>
+                            <button onclick="runRadioSearch()" id="search-btn"
+                                    class="w-full py-2.5 rounded-lg font-bold text-xs tracking-[0.12em] uppercase
+                                           flex items-center justify-center gap-2 transition-all active:scale-95
+                                           bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+                                <span class="icon" style="font-size:16px">my_location</span>
+                                Buscar
+                            </button>
+                            <div id="search-error" class="text-[11px] text-red-400 text-center" style="display:none"></div>
+                        </div>
+
+                        <!-- Results (hidden until search runs) -->
+                        <div id="search-results" style="display:none">
+                            <div class="h-px mx-5" style="background:rgba(53,53,52,0.6)"></div>
+
+                            <!-- Summary card -->
+                            <div class="px-5 py-4 space-y-2.5">
+                                <div class="text-[10px] text-[#e5e2e1]/30 font-mono truncate" id="sr-address"></div>
+
+                                <div class="flex items-end gap-3">
+                                    <div>
+                                        <div class="serif text-3xl font-black text-[#f2be8c]" id="sr-count">0</div>
+                                        <div class="text-[10px] text-[#e5e2e1]/40 mt-0.5">unidades encontradas</div>
+                                    </div>
+                                    <div class="pb-1">
+                                        <div class="text-xs text-[#a7ccea] font-bold" id="sr-radius-lbl"></div>
+                                        <div class="text-[10px] text-[#e5e2e1]/35">radio de búsqueda</div>
+                                    </div>
+                                </div>
+
+                                <!-- Mini empresa breakdown -->
+                                <div id="sr-empresas" class="space-y-1"></div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="px-5 pb-3 flex gap-2">
+                                <button onclick="toggleSearchTable()"
+                                        id="btn-toggle-table"
+                                        class="flex-1 py-2 rounded-lg text-[11px] font-bold tracking-wide
+                                               flex items-center justify-center gap-1.5 transition-all
+                                               bg-[#2a2a2a] hover:bg-[#353534] text-[#e5e2e1]/70 border border-[#50453b]/40">
+                                    <span class="icon" style="font-size:15px" id="icon-toggle-table">expand_more</span>
+                                    Ver unidades
+                                </button>
+                                <button onclick="downloadSearchCSV()"
+                                        class="flex-1 py-2 rounded-lg text-[11px] font-bold tracking-wide
+                                               flex items-center justify-center gap-1.5 transition-all
+                                               bg-[#2a2a2a] hover:bg-[#353534] text-[#e5e2e1]/70 border border-[#50453b]/40">
+                                    <span class="icon" style="font-size:15px">download</span>
+                                    Descargar CSV
+                                </button>
+                            </div>
+
+                            <!-- Collapsible table -->
+                            <div id="search-table-wrap" style="display:none; max-height:260px; overflow-y:auto;">
+                                <div class="h-px" style="background:rgba(53,53,52,0.4)"></div>
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Patente</th>
+                                            <th>Empresa</th>
+                                            <th>Taller asignado</th>
+                                            <th>Dist. km</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="search-table-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+
+            </div><!-- end map viewport -->
+        </div><!-- end page-mapa -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: VISTA EJECUTIVA
+        ══════════════════════════════════ -->
+        <div id="page-ejecutivo" class="page-panel">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+                <div id="ej-loading" class="loading-state animate-pulse">Cargando datos...</div>
+
+                <div id="ej-content" style="display:none">
+
+                    <!-- ── KPI Zonas ── -->
+                    <div id="zona-kpis" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-8 gap-3 mb-6"></div>
+
+                    <!-- ── Chart Zonas ── -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Unidades por zona de operación
+                        </div>
+                        <div id="chart-bar-zonas-wrap" style="position:relative;">
+                            <canvas id="chart-bar-zonas"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Charts row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="section-card">
+                            <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                                Unidades asignadas por taller
+                            </div>
+                            <div style="height:380px; position:relative;">
+                                <canvas id="chart-bar-talleres"></canvas>
+                            </div>
+                        </div>
+                        <div class="section-card">
+                            <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                                Cobertura radio de talleres
+                            </div>
+                            <div style="height:380px; position:relative;">
+                                <canvas id="chart-pie-cobertura"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Top distancia chart -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Top 10 talleres por distancia promedio
+                        </div>
+                        <div style="height:280px; position:relative;">
+                            <canvas id="chart-bar-dist"></canvas>
+                        </div>
+                    </div>
+                    <!-- Table -->
+                    <div class="section-card mb-6">
+                        <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
+                            <div class="serif text-[#f2be8c] font-bold text-base">
+                                Resumen por taller
+                            </div>
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">País</span>
+                                    <select id="ej-filter-pais"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderEjTable()">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Zona</span>
+                                    <select id="ej-filter-zona"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderEjTable()">
+                                        <option value="__all__">Todas</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="ej-table" class="scrollable-table-wrap"></div>
+                    </div>
+
+                    <!-- ── Modelos por sucursal ── -->
+                    <div class="section-card mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="serif text-[#f2be8c] font-bold text-base">
+                                Modelos por taller
+                            </div>
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Taller</span>
+                                    <select id="mod-suc-filter"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Marca</span>
+                                    <select id="mod-suc-filter-marca"
+                                        class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 focus:outline-none focus:border-[#f2be8c]"
+                                        onchange="renderModSucChart(); renderModSucTable();">
+                                        <option value="__all__">Todas</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[11px] text-[rgba(229,226,225,0.45)]">Modelo</span>
+                                    <div class="relative" id="mod-modelo-wrap">
+                                        <button id="mod-modelo-btn" onclick="toggleModeloDropdown()"
+                                            class="bg-[#201f1f] border border-[#50453b] text-[#e5e2e1] text-[12px] rounded-md px-2 py-1 flex items-center gap-2 min-w-[110px] max-w-[180px]">
+                                            <span id="mod-modelo-label" class="truncate">Todos</span>
+                                            <span class="ml-auto text-[10px] opacity-40 flex-shrink-0">▾</span>
+                                        </button>
+                                        <div id="mod-modelo-dropdown"
+                                            style="display:none;position:absolute;right:0;top:calc(100% + 4px);min-width:230px;z-index:50"
+                                            class="bg-[#201f1f] border border-[#50453b] rounded-md shadow-xl">
+                                            <div class="p-2">
+                                                <input id="mod-modelo-search" type="text" placeholder="Buscar modelo…"
+                                                    oninput="filterModeloOptions()"
+                                                    class="w-full bg-[#161515] border border-[#50453b] text-[#e5e2e1] text-[11px] rounded px-2 py-1 focus:outline-none focus:border-[#f2be8c]">
+                                            </div>
+                                            <div class="px-3 pb-1.5 flex gap-3">
+                                                <button onclick="selectAllModelos()" class="text-[10px] text-[#f2be8c] hover:underline">Todos</button>
+                                                <button onclick="clearModeloSearch()" class="text-[10px] text-[rgba(229,226,225,0.4)] hover:underline">Limpiar búsqueda</button>
+                                            </div>
+                                            <div id="mod-modelo-options"
+                                                class="overflow-y-auto border-t border-[rgba(53,53,52,0.4)]"
+                                                style="max-height:220px"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mod-suc-loading" class="loading-state animate-pulse">Cargando modelos...</div>
+                        <div id="mod-suc-error" style="display:none" class="text-red-400 text-xs p-4"></div>
+                        <div id="mod-suc-chart-wrap" style="height:320px; position:relative; display:none;" class="mb-6">
+                            <canvas id="chart-modelos-suc"></canvas>
+                        </div>
+                    </div>
+                    <div class="section-card">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Tabla modelos × taller
+                        </div>
+                        <div id="mod-suc-table" class="scrollable-table-wrap"></div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end page-ejecutivo -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: DETALLE UNIDADES
+        ══════════════════════════════════ -->
+        <div id="page-detalle" class="page-panel">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+                <!-- Filters -->
+                <div class="section-card mb-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Taller
+                            </label>
+                            <select id="det-taller" onchange="applyDetalleFilter()">
+                                <option value="">Todos los talleres</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Empresa
+                            </label>
+                            <select id="det-empresa" onchange="applyDetalleFilter()">
+                                <option value="">Todas las empresas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Buscar VIN / Patente
+                            </label>
+                            <input type="text" id="det-q" placeholder="Ej: ABCD12"
+                                   oninput="applyDetalleFilterDebounced()"/>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">
+                                Dist. máx: <span id="det-dist-label" class="text-[#a7ccea]">sin límite</span>
+                            </label>
+                            <input type="range" min="0" max="1000" step="10" value="1000"
+                                   id="det-dist" oninput="applyDetalleFilterDebounced()"
+                                   class="w-full accent-[#a7ccea] cursor-pointer mt-2"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info bar -->
+                <div class="flex items-center justify-between mb-4">
+                    <p id="det-info" class="text-xs text-[#e5e2e1]/35 font-mono">—</p>
+                    <button onclick="authDownload('/api/export/detalle','detalle_unidades.csv')"
+                       class="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase flex items-center gap-2
+                              transition-all active:scale-95 hover:bg-[#f0bd8b]"
+                       style="background:#f2be8c; color:#482904;">
+                        <span class="icon" style="font-size:15px;">download</span>
+                        Descargar CSV completo
+                    </button>
+                </div>
+
+                <div id="det-loading" class="loading-state animate-pulse">Cargando datos...</div>
+                <div id="det-table" class="section-card" style="display:none; padding:0; overflow:hidden;"></div>
+            </div>
+        </div><!-- end page-detalle -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: TENDENCIA SEMANAL
+        ══════════════════════════════════ -->
+        <div id="page-tendencia" class="page-panel">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+                <div id="tend-loading" class="loading-state animate-pulse">Cargando datos...</div>
+
+                <div id="tend-content" style="display:none">
+                    <!-- Taller selector -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-3">Talleres a comparar</div>
+                        <div id="tend-checks" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <!-- Line chart -->
+                    <div class="section-card mb-6">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">
+                            Unidades únicas por taller — tendencia semanal
+                        </div>
+                        <div style="height:380px; position:relative;">
+                            <canvas id="chart-tendencia"></canvas>
+                        </div>
+                    </div>
+                    <!-- Table -->
+                    <div class="section-card">
+                        <div class="serif text-[#f2be8c] font-bold text-base mb-4">Tabla semanal</div>
+                        <div id="tend-table" class="overflow-x-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end page-tendencia -->
+
+
+        <!-- ══════════════════════════════════
+             PAGE: REPORTES
+        ══════════════════════════════════ -->
+        <div id="page-reportes" class="page-panel">
+            <div class="p-3 md:p-6 max-w-4xl mx-auto w-full">
+                <p id="rep-snap-ts" class="text-xs text-[#e5e2e1]/35 mb-6 font-mono">
+                    Datos del último snapshot
+                </p>
+                <div class="space-y-4" id="rep-cards">
+                    <!-- Cards rendered by JS -->
+                </div>
+            </div>
+        </div><!-- end page-reportes -->
+
+        <!-- ══════════════════════════════════
+             PAGE: ESTADO DE FLOTA
+        ══════════════════════════════════ -->
+        <div id="page-estado-flota" class="page-panel">
+            <div class="p-3 md:p-6 max-w-7xl mx-auto w-full">
+
+                <!-- Tab switcher -->
+                <div style="display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid rgba(53,53,52,0.4)">
+                    <button id="ef-tab-flota" onclick="efSwitchTab('flota')"
+                        style="padding:9px 20px;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;
+                               color:#e5e2e1;border-bottom:2px solid #f2be8c;transition:color 0.15s">
+                        <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:4px">build_circle</span>Estado de Flota
+                    </button>
+                    <button id="ef-tab-tickets" onclick="efSwitchTab('tickets')"
+                        style="padding:9px 20px;font-size:12px;font-weight:700;background:none;border:none;cursor:pointer;
+                               color:rgba(229,226,225,0.45);border-bottom:2px solid transparent;transition:color 0.15s">
+                        <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:4px">assignment</span>Gestión de Tickets
+                    </button>
+                </div>
+
+                <div id="ef-flota-content">
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5" id="ef-kpis" style="display:none!important">
+                    <div class="section-card text-center">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Con telemetría CAN</div>
+                        <div class="serif text-2xl font-bold text-[#f2be8c]" id="ef-con-can">—</div>
+                    </div>
+                    <div class="section-card text-center">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Sin datos CAN</div>
+                        <div class="serif text-2xl font-bold text-[#e5e2e1]/40" id="ef-sin-can">—</div>
+                    </div>
+                    <div class="section-card text-center border border-red-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Críticos (&le;2.000 km)</div>
+                        <div class="serif text-2xl font-bold text-red-400" id="ef-criticos">—</div>
+                    </div>
+                    <div class="section-card text-center border border-yellow-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Atención (&le;5.000 km)</div>
+                        <div class="serif text-2xl font-bold text-yellow-400" id="ef-atencion">—</div>
+                    </div>
+                    <div class="section-card text-center border border-orange-500/20">
+                        <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Con fallas DTC</div>
+                        <div class="serif text-2xl font-bold text-orange-400" id="ef-con-fallas">—</div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="section-card mb-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">País</label>
+                            <select id="ef-pais" onchange="applyEstadoFlotaFilter()">
+                                <option value="">🌎 Todos</option>
+                                <option value="Chile">🇨🇱 Chile</option>
+                                <option value="Colombia">🇨🇴 Colombia</option>
+                                <option value="Peru">🇵🇪 Perú</option>
+                                <option value="Paraguay">🇵🇾 Paraguay</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Empresa</label>
+                            <select id="ef-empresa" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas las empresas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Marca</label>
+                            <select id="ef-marca" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas las marcas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Segmento</label>
+                            <select id="ef-segmento" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todos los segmentos</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado mantenimiento</label>
+                            <select id="ef-estado" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todos</option>
+                                <option value="CRITICO">Crítico</option>
+                                <option value="ATENCION">Atención</option>
+                                <option value="OK">OK</option>
+                                <option value="SIN_DATOS">Sin datos CAN</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Fallas DTC</label>
+                            <select id="ef-dtc" onchange="applyEstadoFlotaFilter()">
+                                <option value="">Todas</option>
+                                <option value="urgente">🔴 Urgente</option>
+                                <option value="seguimiento">🟡 Seguimiento</option>
+                                <option value="con_falla">Con falla (cualquiera)</option>
+                                <option value="sin_falla">Sin fallas</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Buscar patente / VIN</label>
+                            <input type="text" id="ef-q" placeholder="Ej: ABCD12" oninput="applyEstadoFlotaFilterDebounced()"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info bar -->
+                <div class="flex items-center justify-between mb-4">
+                    <p id="ef-info" class="text-xs text-[#e5e2e1]/35 font-mono">—</p>
+                    <button onclick="downloadEstadoFlotaCSV()"
+                        class="px-4 py-2 rounded-lg text-xs font-bold tracking-wide uppercase flex items-center gap-2
+                               transition-all active:scale-95 bg-[#f2be8c] text-[#482904] hover:bg-[#f0bd8b]">
+                        <span class="icon" style="font-size:15px;">download</span>
+                        Descargar CSV
+                    </button>
+                </div>
+
+                <div id="ef-loading" class="loading-state animate-pulse">Cargando datos...</div>
+                <div id="ef-table" class="section-card" style="display:none; padding:0; overflow:hidden;"></div>
+                <div class="mt-4 section-card" style="display:none" id="ef-legend">
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-2">Umbrales por marca (km)</div>
+                    <div id="ef-legend-body" class="flex flex-wrap gap-2"></div>
+                </div>
+                </div><!-- end ef-flota-content -->
+
+                <!-- ── Ticket KPI Panel ── -->
+                <div id="ef-tickets-panel" style="display:none">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                        <div class="section-card text-center">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Abiertos</div>
+                            <div class="serif text-2xl font-bold text-[#f2be8c]" id="tk-abiertos">—</div>
+                        </div>
+                        <div class="section-card text-center" style="border-color:rgba(239,68,68,0.3)">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Vencidos &gt;5 días háb.</div>
+                            <div class="serif text-2xl font-bold text-red-400" id="tk-vencidos">—</div>
+                        </div>
+                        <div class="section-card text-center">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">En proceso</div>
+                            <div class="serif text-2xl font-bold text-[#34b5fa]" id="tk-en-proceso">—</div>
+                        </div>
+                        <div class="section-card text-center" style="border-color:rgba(74,222,128,0.25)">
+                            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Completados</div>
+                            <div class="serif text-2xl font-bold text-green-400" id="tk-completados">—</div>
+                        </div>
+                    </div>
+
+                    <!-- ── Tickets Abiertos ── -->
+                    <div class="section-card mb-4" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;justify-content:space-between">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span class="icon" style="font-size:16px;color:#f2be8c">assignment</span>
+                                <span style="font-size:12px;font-weight:700;color:#e5e2e1">Tickets Abiertos</span>
+                                <span style="font-size:11px;color:rgba(229,226,225,0.4)" id="tk-open-count"></span>
+                            </div>
+                        </div>
+                        <div id="tk-open-list">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+
+                    <div class="section-card mb-4" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;justify-content:space-between">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span class="icon" style="font-size:16px;color:#f2be8c">group</span>
+                                <span style="font-size:12px;font-weight:700;color:#e5e2e1">Por Ejecutivo</span>
+                            </div>
+                            <button onclick="loadTicketKpis()"
+                                style="font-size:11px;color:rgba(229,226,225,0.45);background:none;border:none;
+                                       cursor:pointer;display:flex;align-items:center;gap:4px">
+                                <span class="icon" style="font-size:14px">refresh</span>Actualizar
+                            </button>
+                        </div>
+                        <div id="tk-by-assignee">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+
+                    <div class="section-card" style="padding:0;overflow-x:auto">
+                        <div style="padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.3);display:flex;align-items:center;gap:8px">
+                            <span class="icon" style="font-size:16px;color:#f87171">schedule</span>
+                            <span style="font-size:12px;font-weight:700;color:#f87171">Tickets Vencidos</span>
+                            <span style="font-size:11px;color:rgba(229,226,225,0.4)" id="tk-overdue-count"></span>
+                        </div>
+                        <div id="tk-overdue-list">
+                            <div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>
+                        </div>
+                    </div>
+                </div><!-- end ef-tickets-panel -->
+
+            </div>
+        </div><!-- end page-estado-flota -->
+
+    </div><!-- end content area -->
+</main>
+
+
+<!-- ════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ── Chart.js global defaults ───────────────────────────────────────────────
+Chart.defaults.color           = 'rgba(229,226,225,0.45)';
+Chart.defaults.borderColor     = 'rgba(53,53,52,0.45)';
+Chart.defaults.font.family     = 'Manrope';
+Chart.defaults.font.size       = 12;
+
+// ── Page titles ───────────────────────────────────────────────────────────
+const PAGE_TITLES = {
+    mapa:           'Connect Talleres',
+    ejecutivo:      'Vista Ejecutiva',
+    detalle:        'Detalle Unidades',
+    tendencia:      'Tendencia Semanal',
+    reportes:       'Reportes',
+    'estado-flota': 'Estado de Flota',
+};
+
+// ── Page routing ──────────────────────────────────────────────────────────
+const _loaded = {};
+
+function openMobileMenu() {
+    document.getElementById('mobile-sidebar').classList.add('open');
+    document.getElementById('mobile-overlay').classList.add('open');
+}
+function closeMobileMenu() {
+    document.getElementById('mobile-sidebar').classList.remove('open');
+    document.getElementById('mobile-overlay').classList.remove('open');
+}
+
+function setPage(page, el) {
+    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+    // Sync active state in mobile sidebar too
+    document.querySelectorAll('#mobile-sidebar .nav-link').forEach(a => a.classList.remove('active'));
+    const mobileMatch = document.querySelector(`#mobile-sidebar .nav-link[onclick*="'${page}'"]`);
+    if (mobileMatch) mobileMatch.classList.add('active');
+    document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+    document.querySelectorAll('.page-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+    if (!_loaded[page]) {
+        _loaded[page] = true;
+        if (page === 'ejecutivo')    loadEjecutivo();
+        if (page === 'detalle')      loadDetalle({});
+        if (page === 'tendencia')    loadTendencia();
+        if (page === 'reportes')     renderReportes();
+        if (page === 'estado-flota') loadEstadoFlota();
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAP (Connect Talleres)
+// ═══════════════════════════════════════════════════════
+let deckgl        = null;
+let appData       = null;
+let hexRadius     = 5000;
+let pitch3d       = true;
+let layerState    = { coverage: true, labels: false };
+let countryFilter = 'all'; // 'all' | 'chile' | 'colombia' | 'peru' | 'paraguay'
+let defaultCenter = { lat: -33.45, lon: -70.65, zoom: 4.7 };
+let viewState     = { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
+                      zoom: defaultCenter.zoom, pitch: 45, bearing: 0 };
+
+const HEX_COLORS = [
+    [242, 190, 140,  45],
+    [242, 190, 140, 105],
+    [242, 190, 140, 165],
+    [230, 155,  90, 210],
+    [200, 110,  45, 235],
+    [155,  65,  10, 255],
+];
+
+function initDeck() {
+    deckgl = new deck.DeckGL({
+        container: 'deck-container',
+        mapLib: maplibregl,
+        mapStyle: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+        initialViewState: viewState,
+        controller: true,
+        layers: [],
+        onViewStateChange: ({ viewState: vs }) => { viewState = vs; },
+        onLoad: loadMapData,
+        getTooltip: null,
+    });
+}
+
+function loadMapData() {
+    authFetch('/api/data')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            appData = data;
+            updateMapKPIs(data);
+            updateKPIsForFilter(countryFilter);
+            renderLayers();
+            flyToData(data);
+            document.getElementById('fl-loading').style.display = 'none';
+            // Pre-cargar todas las secciones en background para navegación instantánea
+            _preloadAllPages();
+        })
+        .catch(err => {
+            const el = document.getElementById('fl-loading');
+            el.innerHTML = `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">
+                Error al cargar datos:<br>${err.message}</div>`;
+        });
+}
+
+function _preloadAllPages() {
+    const pages = [
+        ['ejecutivo',    loadEjecutivo],
+        ['tendencia',    loadTendencia],
+        ['estado-flota', loadEstadoFlota],
+        ['detalle',      () => loadDetalle({})],
+    ];
+    pages.forEach(([name, fn], i) => {
+        // IMPORTANTE: NO marcar _loaded[name] = true aquí.
+        // Si el usuario navega al tab antes de que dispare el setTimeout,
+        // setPage() lo cargará inmediatamente y el timeout se convierte en no-op.
+        setTimeout(() => {
+            if (!_loaded[name]) {
+                _loaded[name] = true;
+                fn();
+            }
+        }, (i + 1) * 150);  // 150ms en vez de 400ms — 4 tabs listos en 600ms
+    });
+}
+
+function fmt(n)  { return n != null ? Number(n).toLocaleString('es-CL') : '—'; }
+function pct(p)  { return p != null ? `${p}%` : '—'; }
+function fmtDec(n, d=1) { return n != null ? Number(n).toFixed(d) : '—'; }
+
+function updateMapKPIs(data) {
+    const k = data.kpis;
+    document.getElementById('kpi-units').textContent    = fmt(k.total_units);
+    document.getElementById('kpi-hexbin').textContent   = fmt(k.hex_points);
+    document.getElementById('kpi-pct').textContent      = pct(k.pct_dentro);
+    document.getElementById('kpi-talleres').textContent = fmt(k.total_talleres);
+    document.getElementById('fl-units').textContent     = fmt(k.total_units);
+    document.getElementById('fl-talleres').textContent  = fmt(k.total_talleres);
+    document.getElementById('fl-pct').textContent       = pct(k.pct_dentro);
+    document.getElementById('fl-top-n').textContent     = fmt(k.top_taller_n);
+    document.getElementById('sb-talleres').textContent  = fmt(k.total_talleres);
+    document.getElementById('sb-pct').textContent       = pct(k.pct_dentro);
+    document.getElementById('sb-top-n').textContent     = fmt(k.top_taller_n);
+    document.getElementById('sb-top-name').textContent  = k.top_taller || '—';
+    document.getElementById('snap-ts-header').textContent = data.snap_ts ? `Snapshot: ${data.snap_ts}` : '';
+}
+
+// Paraguay: lon > -58 (Asunción -57.6, CDE -54.7). Chile/Peru/Col siempre < -65.
+function _countryOf(lat, lon) {
+    if (lon > -58)              return 'paraguay';
+    if (lat >   0)              return 'colombia';
+    if (lat >  -17)             return 'peru';
+    return 'chile';
+}
+
+function unitsByCountry(filter) {
+    const all = appData.units || [];
+    if (filter === 'all') return all;
+    return all.filter(u => _countryOf(u.lat, u.lon) === filter);
+}
+
+function talleresByCountry(filter) {
+    const all = appData.talleres || [];
+    if (filter === 'all') return all;
+    return all.filter(t => _countryOf(t.lat, t.lon) === filter);
+}
+
+function updateKPIsForFilter(filter) {
+    if (!appData) return;
+    const units    = unitsByCountry(filter);
+    const talleres = talleresByCountry(filter);
+    const total    = units.length;
+    const dentro   = units.filter(u => u.dentro_radio_taller).length;
+    const pctVal   = total > 0 ? Math.round(dentro / total * 100) : 0;
+
+    // Taller con más unidades asignadas dentro del filtro (por coordenadas)
+    const tallerUnits = {};
+    talleres.forEach(t => { tallerUnits[t.taller_nombre] = t.asignadas || 0; });
+    let topNombre = '—', topN = 0;
+    Object.entries(tallerUnits).forEach(([n, v]) => { if (v > topN) { topN = v; topNombre = n; } });
+
+    // KPI strip
+    document.getElementById('kpi-units').textContent    = fmt(total);
+    document.getElementById('kpi-hexbin').textContent   = fmt(total);
+    document.getElementById('kpi-pct').textContent      = `${pctVal}%`;
+    document.getElementById('kpi-talleres').textContent = fmt(talleres.length);
+    // Floating panel
+    document.getElementById('fl-units').textContent     = fmt(total);
+    document.getElementById('fl-talleres').textContent  = fmt(talleres.length);
+    document.getElementById('fl-pct').textContent       = `${pctVal}%`;
+    document.getElementById('fl-top-n').textContent     = fmt(topN);
+    // Sidebar
+    document.getElementById('sb-talleres').textContent  = fmt(talleres.length);
+    document.getElementById('sb-pct').textContent       = `${pctVal}%`;
+    document.getElementById('sb-top-n').textContent     = fmt(topN);
+    document.getElementById('sb-top-name').textContent  = topNombre;
+}
+
+function buildLayers(data) {
+    const totalUnits = data.kpis.total_units || 1;
+    const layers = [];
+
+    // Clasificar unidades por país (lon > -58 → Paraguay)
+    const all       = data.units || [];
+    const byCountry = {
+        chile:    all.filter(u => _countryOf(u.lat, u.lon) === 'chile'),
+        colombia: all.filter(u => _countryOf(u.lat, u.lon) === 'colombia'),
+        peru:     all.filter(u => _countryOf(u.lat, u.lon) === 'peru'),
+        paraguay: all.filter(u => _countryOf(u.lat, u.lon) === 'paraguay'),
+    };
+
+    const showChile    = countryFilter === 'all' || countryFilter === 'chile';
+    const showColombia = countryFilter === 'all' || countryFilter === 'colombia';
+    const showPeru     = countryFilter === 'all' || countryFilter === 'peru';
+    const showParaguay = countryFilter === 'all' || countryFilter === 'paraguay';
+
+    const unitsVisible = [
+        ...(showChile    ? byCountry.chile    : []),
+        ...(showColombia ? byCountry.colombia : []),
+        ...(showPeru     ? byCountry.peru     : []),
+        ...(showParaguay ? byCountry.paraguay : []),
+    ];
+
+    layers.push(new deck.HexagonLayer({
+        id: 'hex-density', data: unitsVisible,
+        getPosition: d => [d.lon, d.lat],
+        radius: hexRadius, elevationScale: 6, elevationRange: [0, 2500],
+        extruded: pitch3d, pickable: false, opacity: 0.75, coverage: 0.88,
+        colorRange: HEX_COLORS, colorDomain: [0, 3], elevationDomain: [0, 3],
+    }));
+
+    if (layerState.coverage) {
+        layers.push(new deck.ScatterplotLayer({
+            id: 'taller-coverage', data: data.talleres,
+            getPosition: d => [d.lon, d.lat],
+            getRadius: d => (d.radius_km || 100) * 1000,
+            getFillColor: [242, 190, 140, 10], getLineColor: [242, 190, 140, 70],
+            stroked: true, filled: true, lineWidthMinPixels: 1, pickable: false,
+        }));
+    }
+
+    layers.push(new deck.ScatterplotLayer({
+        id: 'talleres-dots', data: data.talleres,
+        getPosition: d => [d.lon, d.lat], getRadius: 4200,
+        getFillColor: [242, 190, 140, 235], getLineColor: [255, 255, 255, 200],
+        lineWidthMinPixels: 2, stroked: true, pickable: true,
+        autoHighlight: true, highlightColor: [255, 255, 255, 60],
+        onHover: info => showTooltip(info, totalUnits),
+    }));
+
+    if (layerState.labels) {
+        layers.push(new deck.TextLayer({
+            id: 'taller-labels', data: data.talleres,
+            getPosition: d => [d.lon, d.lat], getText: d => d.taller_nombre,
+            getSize: 13, getColor: [242, 190, 140, 255],
+            getTextAnchor: 'middle', getAlignmentBaseline: 'bottom',
+            getPixelOffset: [0, -52], billboard: true, pickable: false,
+        }));
+    }
+
+    return layers;
+}
+
+function renderLayers() {
+    if (!deckgl || !appData) return;
+    deckgl.setProps({ layers: buildLayers(appData) });
+}
+
+const COUNTRY_VIEWS = {
+    all:      { lat: -18,    lon: -68,    zoom: 2.8 },
+    chile:    { lat: -33.45, lon: -70.65, zoom: 4.7 },
+    colombia: { lat:   4.7,  lon: -74.1,  zoom: 5.5 },
+    peru:     { lat:  -9.5,  lon: -76.5,  zoom: 5.0 },
+    paraguay: { lat: -25.4,  lon: -57.0,  zoom: 6.5 },
+};
+
+function setCountryFilter(country) {
+    countryFilter = country;
+
+    // Actualizar estilo de botones
+    document.querySelectorAll('.cf-btn').forEach(btn => {
+        const isActive = btn.id === `cf-${country}`;
+        btn.className = btn.className
+            .replace(/bg-\[#f2be8c\]\/15|bg-\[#1c1b1b\]\/80/g, '')
+            .replace(/border-\[#f2be8c\]\/40|border-\[#353534\]\/60/g, '')
+            .replace(/text-\[#f2be8c\]|text-\[#e5e2e1\]\/50/g, '');
+        if (isActive) {
+            btn.className += ' bg-[#f2be8c]/15 border-[#f2be8c]/40 text-[#f2be8c]';
+        } else {
+            btn.className += ' bg-[#1c1b1b]/80 border-[#353534]/60 text-[#e5e2e1]/50';
+        }
+    });
+
+    renderLayers();
+    updateKPIsForFilter(country);
+
+    // Fly a la vista del país
+    const v = COUNTRY_VIEWS[country];
+    if (v && deckgl) {
+        deckgl.setProps({ initialViewState: {
+            longitude: v.lon, latitude: v.lat, zoom: v.zoom,
+            pitch: 45, bearing: 0, transitionDuration: 800,
+        }});
+    }
+}
+
+function flyToData(data) {
+    // Calcular bounding box sobre todas las unidades + talleres
+    const allLats = [
+        ...data.talleres.map(t => t.lat),
+        ...(data.units || []).map(u => u.lat).filter(v => v != null),
+    ];
+    const allLons = [
+        ...data.talleres.map(t => t.lon),
+        ...(data.units || []).map(u => u.lon).filter(v => v != null),
+    ];
+    if (!allLats.length) return;
+
+    const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+    const minLon = Math.min(...allLons), maxLon = Math.max(...allLons);
+    const cLat = (minLat + maxLat) / 2;
+    const cLon = (minLon + maxLon) / 2;
+
+    // Estimar zoom para que quepan todos los puntos
+    const latSpan = maxLat - minLat || 10;
+    const lonSpan = maxLon - minLon || 10;
+    const span    = Math.max(latSpan, lonSpan);
+    const zoom    = Math.min(4.7, Math.max(2, Math.log2(360 / span) - 0.5));
+
+    defaultCenter = { lat: cLat, lon: cLon, zoom };
+    deckgl.setProps({
+        initialViewState: {
+            longitude: cLon, latitude: cLat, zoom, pitch: 45, bearing: 0,
+            transitionDuration: 1800,
+            transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+        },
+    });
+}
+
+function showTooltip(info, totalUnits) {
+    const el = document.getElementById('deck-tooltip');
+    if (!info.object) { el.style.display = 'none'; return; }
+    const obj = info.object;
+    document.getElementById('tt-nombre').textContent    = obj.taller_nombre || '—';
+    document.getElementById('tt-asignadas').textContent = fmt(obj.asignadas);
+    const p = totalUnits ? ((obj.asignadas / totalUnits) * 100).toFixed(1) : '—';
+    document.getElementById('tt-pct').textContent = `${p}%`;
+    el.style.display = 'block';
+    el.style.left    = (info.x + 18) + 'px';
+    el.style.top     = (info.y - 100) + 'px';
+}
+
+function zoomIn()  { deckgl.setProps({ initialViewState: { ...viewState, zoom: viewState.zoom + 1, transitionDuration: 400 } }); }
+function zoomOut() { deckgl.setProps({ initialViewState: { ...viewState, zoom: Math.max(1, viewState.zoom - 1), transitionDuration: 400 } }); }
+function resetView() {
+    deckgl.setProps({ initialViewState: { longitude: defaultCenter.lon, latitude: defaultCenter.lat,
+        zoom: defaultCenter.zoom, pitch: pitch3d ? 45 : 0, bearing: 0, transitionDuration: 1200 } });
+}
+function togglePitch() {
+    pitch3d = !pitch3d;
+    document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
+    document.getElementById('chk-3d').checked = pitch3d;
+    deckgl.setProps({ initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 } });
+    renderLayers();
+}
+function toggle3D() {
+    pitch3d = document.getElementById('chk-3d').checked;
+    document.getElementById('btn-pitch').classList.toggle('active', pitch3d);
+    deckgl.setProps({ initialViewState: { ...viewState, pitch: pitch3d ? 45 : 0, transitionDuration: 600 } });
+    renderLayers();
+}
+function toggleLayer(name) { layerState[name] = !layerState[name]; renderLayers(); }
+function onRadiusChange(val) {
+    hexRadius = parseInt(val, 10);
+    document.getElementById('kpi-radius').textContent = Number(hexRadius).toLocaleString('es-CL');
+    renderLayers();
+}
+function downloadReport() {
+    if (!appData || !appData.talleres) return;
+    const rows = appData.talleres.map(t => `${t.taller_nombre},${t.asignadas},${t.pct}%,${t.radius_km}`);
+    const csv = 'Taller,Unidades Asignadas,% Flota,Radio (km)\n' + rows.join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = `reporte_talleres_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  BÚSQUEDA POR DIRECCIÓN + RADIO
+// ═══════════════════════════════════════════════════════
+let _searchResults = [];
+let _searchTableOpen = false;
+
+function toggleSearchPanel() {
+    const panel = document.getElementById('search-panel');
+    const btn   = document.getElementById('btn-search');
+    const open  = panel.style.display === 'none';
+    panel.style.display = open ? 'block' : 'none';
+    btn.classList.toggle('active', open);
+    if (open) document.getElementById('search-address').focus();
+}
+
+function closeSearchPanel() {
+    document.getElementById('search-panel').style.display = 'none';
+    document.getElementById('btn-search').classList.remove('active');
+    clearSearchLayers();
+}
+
+function clearSearchLayers() {
+    if (!deckgl || !appData) return;
+    deckgl.setProps({ layers: buildLayers(appData) });
+}
+
+async function runRadioSearch() {
+    const address = document.getElementById('search-address').value.trim();
+    const radius  = parseFloat(document.getElementById('search-radius-slider').value);
+    const errEl   = document.getElementById('search-error');
+    const btn     = document.getElementById('search-btn');
+
+    errEl.style.display = 'none';
+    if (!address) { errEl.textContent = 'Ingresa una dirección.'; errEl.style.display = 'block'; return; }
+
+    btn.textContent = 'Geocodificando…';
+    btn.disabled = true;
+
+    // 1. Geocodificar con Nominatim
+    let lat, lon, displayName;
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=es&q=${encodeURIComponent(address)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Geocodificador no disponible (${resp.status})`);
+        const geo  = await resp.json();
+        if (!geo.length) throw new Error('Dirección no encontrada. Prueba con ciudad o región, ej: "Antofagasta" o "Av. Grecia 750, Antofagasta".');
+        lat         = parseFloat(geo[0].lat);
+        lon         = parseFloat(geo[0].lon);
+        displayName = geo[0].display_name;
+    } catch (e) {
+        errEl.textContent = e.message || 'Error al geocodificar.';
+        errEl.style.display = 'block';
+        btn.textContent = 'Buscar';
+        btn.disabled = false;
+        return;
+    }
+
+    btn.textContent = 'Consultando…';
+
+    // 2. Buscar unidades en el radio
+    let data;
+    try {
+        const resp = await authFetch(`/api/radio-search?lat=${lat}&lon=${lon}&radius_km=${radius}`);
+        const raw  = await resp.text();
+        try { data = JSON.parse(raw); } catch (_) {
+            throw new Error(`Error del servidor (${resp.status}). Revisa la consola del servidor Flask.`);
+        }
+        if (data.error) throw new Error(data.error);
+    } catch (e) {
+        errEl.textContent = e.message || 'Error al consultar el servidor.';
+        errEl.style.display = 'block';
+        btn.innerHTML = '<span class="icon" style="font-size:16px">my_location</span> Buscar';
+        btn.disabled = false;
+        return;
+    }
+
+    btn.innerHTML = '<span class="icon" style="font-size:16px">my_location</span> Buscar';
+    btn.disabled = false;
+    _searchResults = data.rows || [];
+
+    // 3. Mostrar resultados
+    renderSearchResults(data, lat, lon, displayName, radius);
+
+    // 4. Actualizar capas del mapa
+    renderSearchLayers(lat, lon, radius, data.rows || []);
+
+    // 5. Volar al centroide
+    deckgl.setProps({
+        initialViewState: {
+            longitude: lon, latitude: lat,
+            zoom: Math.max(4, Math.min(12, 13.5 - Math.log2(radius))),
+            pitch: pitch3d ? 45 : 0, bearing: 0, transitionDuration: 1400,
+            transitionEasing: t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t,
+        },
+    });
+}
+
+function renderSearchResults(data, lat, lon, displayName, radius) {
+    document.getElementById('search-results').style.display = 'block';
+    document.getElementById('sr-address').textContent = displayName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+    document.getElementById('sr-count').textContent   = fmt(data.count);
+    document.getElementById('sr-radius-lbl').textContent = `${radius} km`;
+
+    // Breakdown por empresa
+    const rows = data.rows || [];
+    const byEmpresa = {};
+    rows.forEach(r => { const e = r.empresa || 'Sin empresa'; byEmpresa[e] = (byEmpresa[e] || 0) + 1; });
+    const sorted = Object.entries(byEmpresa).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const empEl = document.getElementById('sr-empresas');
+    empEl.innerHTML = sorted.map(([name, n]) => `
+        <div class="flex justify-between items-center">
+            <span class="text-[10px] text-[#e5e2e1]/45 truncate" style="max-width:160px">${name}</span>
+            <span class="text-[10px] font-bold text-[#f2be8c]">${fmt(n)}</span>
+        </div>`).join('');
+
+    // Tabla
+    const tbody = document.getElementById('search-table-body');
+    tbody.innerHTML = rows.slice(0, 200).map(r => `
+        <tr>
+            <td class="font-mono text-[11px]">${r.patente || '—'}</td>
+            <td class="text-[11px]">${r.empresa || '—'}</td>
+            <td class="text-[10px] text-[#e5e2e1]/50 truncate" style="max-width:120px">${r.taller_cercano_nombre || '—'}</td>
+            <td class="font-mono text-[11px] text-[#a7ccea]">${r.distancia_km != null ? r.distancia_km + ' km' : '—'}</td>
+        </tr>`).join('');
+
+    // Reset table state
+    _searchTableOpen = false;
+    document.getElementById('search-table-wrap').style.display = 'none';
+    document.getElementById('icon-toggle-table').textContent = 'expand_more';
+}
+
+function toggleSearchTable() {
+    _searchTableOpen = !_searchTableOpen;
+    document.getElementById('search-table-wrap').style.display = _searchTableOpen ? 'block' : 'none';
+    document.getElementById('icon-toggle-table').textContent = _searchTableOpen ? 'expand_less' : 'expand_more';
+}
+
+function renderSearchLayers(lat, lon, radius_km, units) {
+    if (!deckgl || !appData) return;
+    const base = buildLayers(appData);
+    const radiusM = radius_km * 1000;
+
+    // Relleno suave del círculo
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-radius-fill',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: radiusM,
+        getFillColor: [167, 204, 234, 20],
+        stroked: false, filled: true, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Borde del círculo (línea sólida)
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-radius-border',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: radiusM,
+        getFillColor: [0, 0, 0, 0],
+        getLineColor: [167, 204, 234, 220],
+        stroked: true, filled: false,
+        lineWidthMinPixels: 2,
+        pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Unidades encontradas
+    if (units.length) {
+        base.push(new deck.ScatterplotLayer({
+            id: 'search-units',
+            data: units.filter(u => u.lat && u.lon),
+            getPosition: d => [parseFloat(d.lon), parseFloat(d.lat)],
+            getRadius: 1800,
+            getFillColor: [167, 204, 234, 210],
+            getLineColor: [255, 255, 255, 60],
+            stroked: true, filled: true, lineWidthMinPixels: 1, pickable: false,
+            radiusUnits: 'meters',
+        }));
+    }
+
+    // Halo exterior del pin (anillo blanco semitransparente)
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-pin-halo',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: 5500,
+        getFillColor: [255, 255, 255, 0],
+        getLineColor: [255, 255, 255, 90],
+        stroked: true, filled: false,
+        lineWidthMinPixels: 1.5, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    // Pin principal — punto blanco sólido
+    base.push(new deck.ScatterplotLayer({
+        id: 'search-pin',
+        data: [{ lat, lon }],
+        getPosition: d => [d.lon, d.lat],
+        getRadius: 3000,
+        getFillColor: [255, 255, 255, 255],
+        getLineColor: [167, 204, 234, 255],
+        stroked: true, filled: true,
+        lineWidthMinPixels: 2, pickable: false,
+        radiusUnits: 'meters',
+    }));
+
+    deckgl.setProps({ layers: base });
+}
+
+function downloadSearchCSV() {
+    if (!_searchResults.length) return;
+    const header = 'Patente,Empresa,Modelo,Taller Asignado,Distancia (km),Lat,Lon';
+    const rows   = _searchResults.map(r =>
+        `${r.patente||''},${r.empresa||''},${r.modelo||''},${r.taller_cercano_nombre||''},${r.distancia_km||''},${r.lat||''},${r.lon||''}`
+    );
+    const csv = header + '\n' + rows.join('\n');
+    const a   = document.createElement('a');
+    a.href    = 'data:text/csv;charset=utf-8-sig,' + encodeURIComponent(csv);
+    a.download = `busqueda_radio_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  VISTA EJECUTIVA
+// ═══════════════════════════════════════════════════════
+let _ejCharts = {};
+let _ejResumenData = [];
+
+function loadEjecutivo() {
+    authFetch('/api/ejecutivo')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderEjecutivo(data))
+        .catch(err => {
+            document.getElementById('ej-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+function renderEjecutivo(data) {
+    document.getElementById('ej-loading').style.display = 'none';
+    document.getElementById('ej-content').style.display = 'block';
+
+    const resumen = data.resumen || [];
+    const sorted  = [...resumen].sort((a, b) => a.unidades - b.unidades);
+    const top10   = (data.top_distancia || []);
+    const cob     = data.cobertura || { dentro: 0, fuera: 0 };
+    const zonas   = data.zona || [];
+
+    // ── KPI cards por zona ──
+    const PAIS_FLAGS = { 'Chile':'🇨🇱', 'Colombia':'🇨🇴', 'Peru':'🇵🇪', 'Paraguay':'🇵🇾' };
+    const PAIS_ZONA_COLORS = {
+        Chile: {
+            'NORTE GRANDE':'#f2be8c','NORTE CHICO':'#fcd34d',
+            'METROPOLITANA':'#a7ccea','METROPOLITANA ORIENTE':'#93c5fd','METROPOLINA ORIENTE':'#93c5fd',
+            'CENTRO':'#86efac','SUR':'#6ee7b7','EXTREMO SUR':'#c4b5fd',
+        },
+        Colombia: {
+            'COSTA CARIBE':'#34d399','NOROCCIDENTE':'#6ee7b7','NORORIENTE':'#10b981',
+            'OCCIDENTE':'#a7f3d0','CENTRO':'#d1fae5',
+        },
+        Peru: { 'NORTE':'#fca5a5','CENTRO':'#f87171','SUR':'#fda4af' },
+        Paraguay: { 'CAPITAL':'#e879f9','ESTE':'#a855f7','SUR':'#c084fc','CENTRO':'#8b5cf6' },
+    };
+    function zonaColor(pais, zona) {
+        return (PAIS_ZONA_COLORS[pais] || {})[zona] || '#e5e2e1';
+    }
+
+    const kpiWrap = document.getElementById('zona-kpis');
+    kpiWrap.innerHTML = zonas.map(z => {
+        const color   = zonaColor(z.pais, z.zona);
+        const flag    = PAIS_FLAGS[z.pais] || '';
+        const fuera   = z.unidades - z.dentro;
+        const barPct  = z.unidades ? Math.round(z.dentro / z.unidades * 100) : 0;
+        return `
+        <div class="section-card flex flex-col gap-1.5 min-w-0">
+            <div class="text-[8px] font-bold tracking-[0.15em] uppercase truncate"
+                 style="color:${color}">${flag} ${z.zona}</div>
+
+            <div class="flex flex-col">
+                <div class="serif text-2xl font-black" style="color:${color}">${fmt(z.unidades)}</div>
+                <div class="text-[10px] text-[#e5e2e1]/35">unidades</div>
+            </div>
+
+            <div class="h-px" style="background:rgba(53,53,52,0.5)"></div>
+
+            <!-- Barra dentro/fuera del radio -->
+            <div>
+                <div class="flex justify-between text-[9px] mb-1">
+                    <span class="text-[#e5e2e1]/40">Dentro del radio</span>
+                    <span class="font-bold" style="color:${color}">${fmt(z.dentro)} <span class="text-[#e5e2e1]/30 font-normal">/ ${fmt(z.unidades)}</span></span>
+                </div>
+                <div class="w-full rounded-full overflow-hidden" style="height:4px;background:rgba(53,53,52,0.6)">
+                    <div class="h-full rounded-full" style="width:${barPct}%;background:${color};opacity:0.8"></div>
+                </div>
+                <div class="text-[9px] text-[#e5e2e1]/25 mt-0.5">${fuera > 0 ? fmt(fuera)+' fuera del radio' : 'Todos dentro del radio'}</div>
+            </div>
+
+            <div class="h-px" style="background:rgba(53,53,52,0.5)"></div>
+
+            <div class="flex justify-between text-[10px]">
+                <span class="text-[#e5e2e1]/40">Talleres</span>
+                <span class="font-bold text-[#e5e2e1]/70">${z.talleres}</span>
+            </div>
+            <div class="flex justify-between text-[10px]">
+                <span class="text-[#e5e2e1]/40">Dist. prom. al taller</span>
+                <span class="font-bold text-[#e5e2e1]/60">${fmtDec(z.dist_prom)} km</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    // ── Bar horizontal: unidades por zona (dentro / fuera del radio) ──
+    const zonaChartH = Math.max(280, zonas.length * 36);
+    document.getElementById('chart-bar-zonas-wrap').style.height = zonaChartH + 'px';
+    if (_ejCharts.zonas) _ejCharts.zonas.destroy();
+    _ejCharts.zonas = new Chart(document.getElementById('chart-bar-zonas'), {
+        type: 'bar',
+        data: {
+            labels: zonas.map(z => `${PAIS_FLAGS[z.pais]||''} ${z.zona}`),
+            datasets: [
+                {
+                    label: 'Dentro del radio',
+                    data: zonas.map(z => z.dentro),
+                    backgroundColor: zonas.map(z => {
+                        const c = zonaColor(z.pais, z.zona);
+                        const r = parseInt(c.slice(1,3),16);
+                        const g = parseInt(c.slice(3,5),16);
+                        const b = parseInt(c.slice(5,7),16);
+                        return `rgba(${r},${g},${b},0.75)`;
+                    }),
+                    borderWidth: 0, borderRadius: { topLeft:3, bottomLeft:3 },
+                },
+                {
+                    label: 'Fuera del radio',
+                    data: zonas.map(z => z.unidades - z.dentro),
+                    backgroundColor: 'rgba(53,53,52,0.55)',
+                    borderWidth: 0, borderRadius: { topRight:3, bottomRight:3 },
+                },
+            ],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const z = zonas[ctx.dataIndex];
+                            const pct = z.unidades ? (ctx.raw / z.unidades * 100).toFixed(1) : 0;
+                            return ` ${ctx.dataset.label}: ${fmt(ctx.raw)} (${pct}%)`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { color: 'rgba(53,53,52,0.4)' },
+                    ticks: { color: 'rgba(229,226,225,0.35)', font: { size: 10 } },
+                },
+                y: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: { color: 'rgba(229,226,225,0.7)', font: { size: 11 }, padding: 4 },
+                },
+            },
+        },
+    });
+
+    // ── Bar: unidades por taller ──
+    if (_ejCharts.bar) _ejCharts.bar.destroy();
+    _ejCharts.bar = new Chart(document.getElementById('chart-bar-talleres'), {
+        type: 'bar',
+        data: {
+            labels: sorted.map(r => r.taller_cercano_nombre || r.taller || ''),
+            datasets: [{
+                data: sorted.map(r => r.unidades),
+                backgroundColor: sorted.map((_, i) => `rgba(242,190,140,${0.4 + (i/sorted.length)*0.55})`),
+                borderColor: '#f2be8c', borderWidth: 0,
+                borderRadius: 3,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.5)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { display: false }, ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 11 } } },
+            },
+        },
+    });
+
+    // ── Doughnut: cobertura ──
+    if (_ejCharts.pie) _ejCharts.pie.destroy();
+    _ejCharts.pie = new Chart(document.getElementById('chart-pie-cobertura'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Dentro del radio', 'Fuera del radio'],
+            datasets: [{
+                data: [cob.dentro, cob.fuera],
+                backgroundColor: ['rgba(167,204,234,0.75)', 'rgba(80,69,59,0.45)'],
+                borderColor: ['#a7ccea', '#50453b'],
+                borderWidth: 1.5,
+            }],
+        },
+        options: {
+            cutout: '62%', responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 20, usePointStyle: true },
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const total = cob.dentro + cob.fuera;
+                            const p = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                            return ` ${fmt(ctx.raw)} unidades (${p}%)`;
+                        }
+                    }
+                }
+            },
+        },
+    });
+
+    // ── Bar: top 10 distancia ──
+    if (_ejCharts.dist) _ejCharts.dist.destroy();
+    _ejCharts.dist = new Chart(document.getElementById('chart-bar-dist'), {
+        type: 'bar',
+        data: {
+            labels: top10.map(r => r.taller_cercano_nombre || r.taller || ''),
+            datasets: [{
+                data: top10.map(r => r.dist_prom),
+                backgroundColor: 'rgba(167,204,234,0.55)',
+                borderColor: '#a7ccea', borderWidth: 0, borderRadius: 3,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${fmtDec(ctx.raw)} km` } },
+            },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.5)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { display: false }, ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 11 } } },
+            },
+        },
+    });
+
+    // ── Table ──
+    _ejResumenData = [...resumen].sort((a, b) => b.unidades - a.unidades);
+
+    // Poblar filtro País
+    const selPais = document.getElementById('ej-filter-pais');
+    selPais.innerHTML = '<option value="__all__">Todos</option>';
+    [...new Set(resumen.map(r => r.pais).filter(Boolean))].sort().forEach(p => {
+        const opt = document.createElement('option'); opt.value = p; opt.textContent = p;
+        selPais.appendChild(opt);
+    });
+
+    // Poblar filtro Zona (todas las zonas inicialmente)
+    const selZona = document.getElementById('ej-filter-zona');
+    selZona.innerHTML = '<option value="__all__">Todas</option>';
+    [...new Set(resumen.map(r => r.zona).filter(Boolean))].sort().forEach(z => {
+        const opt = document.createElement('option'); opt.value = z; opt.textContent = z;
+        selZona.appendChild(opt);
+    });
+
+    renderEjTable();
+
+    // Cargar sección modelos por sucursal (independiente del resto)
+    try { loadModSucursal(); } catch(e) {
+        document.getElementById('mod-suc-loading').style.display = 'none';
+        document.getElementById('mod-suc-error').textContent = `Error: ${e.message}`;
+        document.getElementById('mod-suc-error').style.display = 'block';
+    }
+}
+
+function renderEjTable() {
+    if (!_ejResumenData.length) return;
+    const paisFiltro = document.getElementById('ej-filter-pais').value;
+    const zonaFiltro = document.getElementById('ej-filter-zona').value;
+
+    // Al cambiar país, actualizar opciones de zona disponibles
+    const selZona = document.getElementById('ej-filter-zona');
+    const prevZona = selZona.value;
+    const zonasDisp = [...new Set(
+        _ejResumenData
+            .filter(r => paisFiltro === '__all__' || r.pais === paisFiltro)
+            .map(r => r.zona).filter(Boolean)
+    )].sort();
+    selZona.innerHTML = '<option value="__all__">Todas</option>';
+    zonasDisp.forEach(z => {
+        const opt = document.createElement('option'); opt.value = z; opt.textContent = z;
+        if (z === prevZona) opt.selected = true;
+        selZona.appendChild(opt);
+    });
+
+    const _EJ_FLAGS = { 'Chile':'🇨🇱', 'Colombia':'🇨🇴', 'Peru':'🇵🇪', 'Paraguay':'🇵🇾' };
+    const cols = [
+        { key: 'pais', label: 'País', fmt: v => `<span class="whitespace-nowrap">${_EJ_FLAGS[v]||''} ${escHtml(String(v||''))}</span>` },
+        { key: 'zona', label: 'Zona', fmt: v => escHtml(String(v||'')) },
+        { key: 'taller_cercano_nombre', label: 'Taller', fmt: v => escHtml(String(v||'')) },
+        { key: 'unidades',   label: 'Unidades',     fmt: fmt },
+        { key: 'pct',        label: '% Total',      fmt: v => `${v}%` },
+        { key: 'dist_prom',  label: 'Dist. prom. (km)', fmt: v => fmtDec(v) },
+        { key: 'dist_max',   label: 'Dist. max. (km)',  fmt: v => fmtDec(v) },
+        { key: 'dist_min',   label: 'Dist. min. (km)',  fmt: v => fmtDec(v) },
+    ];
+
+    const filtradas = _ejResumenData.filter(r => {
+        if (paisFiltro !== '__all__' && r.pais !== paisFiltro) return false;
+        if (zonaFiltro !== '__all__' && r.zona !== zonaFiltro) return false;
+        return true;
+    });
+
+    document.getElementById('ej-table').innerHTML = buildTable(cols, filtradas, { raw: true });
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  MULTI-SELECT MODELO
+// ═══════════════════════════════════════════════════════
+let _selectedModelos = new Set(); // vacío = mostrar todos
+let _modModelosAll   = [];
+
+function toggleModeloDropdown() {
+    const dd = document.getElementById('mod-modelo-dropdown');
+    const opening = dd.style.display === 'none';
+    dd.style.display = opening ? 'block' : 'none';
+    if (opening) document.getElementById('mod-modelo-search').focus();
+}
+
+document.addEventListener('click', e => {
+    const wrap = document.getElementById('mod-modelo-wrap');
+    if (wrap && !wrap.contains(e.target))
+        document.getElementById('mod-modelo-dropdown').style.display = 'none';
+});
+
+function filterModeloOptions() {
+    const q = document.getElementById('mod-modelo-search').value.toLowerCase();
+    document.querySelectorAll('#mod-modelo-options .mod-opt').forEach(el => {
+        el.style.display = el.dataset.label.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function clearModeloSearch() {
+    document.getElementById('mod-modelo-search').value = '';
+    filterModeloOptions();
+}
+
+function toggleModelo(m) {
+    if (_selectedModelos.has(m)) _selectedModelos.delete(m);
+    else _selectedModelos.add(m);
+    _updateModeloLabel();
+    renderModSucChart();
+    renderModSucTable();
+}
+
+function selectAllModelos() {
+    _selectedModelos.clear();
+    document.querySelectorAll('#mod-modelo-options input[type=checkbox]').forEach(cb => cb.checked = false);
+    _updateModeloLabel();
+    renderModSucChart();
+    renderModSucTable();
+}
+
+function _updateModeloLabel() {
+    const lbl = document.getElementById('mod-modelo-label');
+    if (!lbl) return;
+    if (_selectedModelos.size === 0) { lbl.textContent = 'Todos'; return; }
+    if (_selectedModelos.size === 1) {
+        const [m] = _selectedModelos;
+        lbl.textContent = m.length > 16 ? m.slice(0, 14) + '…' : m;
+    } else {
+        lbl.textContent = `${_selectedModelos.size} modelos`;
+    }
+}
+
+function _populateModeloOptions(modelos) {
+    _modModelosAll = modelos;
+    _selectedModelos.clear();
+    const wrap = document.getElementById('mod-modelo-options');
+    if (!wrap) return;
+    wrap.innerHTML = modelos.map(m => `
+        <label class="mod-opt flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none"
+               style="transition:background 0.1s"
+               onmouseover="this.style.background='rgba(242,190,140,0.07)'"
+               onmouseout="this.style.background=''"
+               data-label="${escHtml(m)}">
+            <input type="checkbox" value="${escHtml(m)}" onchange="toggleModelo(this.value)"
+                   style="accent-color:#f2be8c;width:13px;height:13px;flex-shrink:0;cursor:pointer">
+            <span style="font-size:11px;color:rgba(229,226,225,0.8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m)}</span>
+        </label>`).join('');
+    _updateModeloLabel();
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  MODELOS POR SUCURSAL
+// ═══════════════════════════════════════════════════════
+let _modSucData   = null;
+let _modSucChart  = null;
+
+// Paleta de colores para sucursales
+const MOD_PALETTE = [
+    '#f2be8c','#a7ccea','#86efac','#fcd34d','#f9a8d4',
+    '#c4b5fd','#6ee7b7','#fb923c','#67e8f9','#e879f9',
+];
+
+function loadModSucursal() {
+    document.getElementById('mod-suc-loading').style.display = 'flex';
+    document.getElementById('mod-suc-error').style.display   = 'none';
+    document.getElementById('mod-suc-chart-wrap').style.display = 'none';
+
+    authFetch('/api/modelos-sucursal')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => {
+            _modSucData = data;
+            document.getElementById('mod-suc-loading').style.display = 'none';
+
+            if (!data.rows || !data.rows.length) {
+                document.getElementById('mod-suc-error').textContent = 'Sin datos de modelos para este snapshot.';
+                document.getElementById('mod-suc-error').style.display = 'block';
+                return;
+            }
+
+            // Poblar filtro de taller
+            const sel = document.getElementById('mod-suc-filter');
+            sel.innerHTML = '<option value="__all__">Todos</option>';
+            (data.talleres || []).forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t; opt.textContent = t;
+                sel.appendChild(opt);
+            });
+
+            // Poblar filtro Marca
+            const selMarca = document.getElementById('mod-suc-filter-marca');
+            selMarca.innerHTML = '<option value="__all__">Todas</option>';
+            (data.marcas || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m; opt.textContent = m;
+                selMarca.appendChild(opt);
+            });
+
+
+            // Poblar dropdown multi-select de modelo
+            _populateModeloOptions(data.modelos || []);
+
+            document.getElementById('mod-suc-chart-wrap').style.display = 'block';
+            renderModSucChart();
+            renderModSucTable();
+        })
+        .catch(err => {
+            document.getElementById('mod-suc-loading').style.display = 'none';
+            document.getElementById('mod-suc-error').textContent = `Error al cargar modelos: ${err.message}`;
+            document.getElementById('mod-suc-error').style.display = 'block';
+            console.warn('modelos-sucursal:', err.message);
+        });
+}
+
+function _getModFiltros() {
+    return {
+        taller:  document.getElementById('mod-suc-filter').value,
+        marca:   document.getElementById('mod-suc-filter-marca').value,
+        modelos: _selectedModelos.size ? _selectedModelos : null,
+    };
+}
+
+function renderModSucChart() {
+    if (!_modSucData) return;
+    const { taller: tallerFiltro, marca: marcaFiltro, modelos: modeloSel } = _getModFiltros();
+    const { talleres, modelos, rows } = _modSucData;
+
+    const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
+
+    // Filtrar modelos por todos los criterios activos
+    const modFiltrados = modelos.filter(m => {
+        if (modeloSel && !modeloSel.has(m)) return false;
+        const row = rows.find(r => r.modelo === m);
+        if (!row) return false;
+        if (marcaFiltro !== '__all__' && (row.marca || '') !== marcaFiltro) return false;
+        return talleresActivos.some(t => (row[t] || 0) > 0);
+    }).slice(0, 20);
+
+    // Convertir hex a rgba manualmente
+    const styledDatasets = talleresActivos.map((taller, i) => {
+        const hex = MOD_PALETTE[i % MOD_PALETTE.length];
+        const r = parseInt(hex.slice(1,3),16);
+        const g = parseInt(hex.slice(3,5),16);
+        const b = parseInt(hex.slice(5,7),16);
+        return {
+            label: taller,
+            data: modFiltrados.map(m => {
+                const row = rows.find(r => r.modelo === m);
+                return row ? (row[taller] || 0) : 0;
+            }),
+            backgroundColor: `rgba(${r},${g},${b},0.65)`,
+            borderColor: hex,
+            borderWidth: 0, borderRadius: 3,
+        };
+    });
+
+    if (_modSucChart) _modSucChart.destroy();
+    _modSucChart = new Chart(document.getElementById('chart-modelos-suc'), {
+        type: 'bar',
+        data: { labels: modFiltrados, datasets: styledDatasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, font: { size: 11 } },
+                },
+                tooltip: {
+                    callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} unidades` },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: 'rgba(229,226,225,0.65)', font: { size: 10 }, maxRotation: 35 },
+                },
+                y: {
+                    grid: { color: 'rgba(53,53,52,0.5)' },
+                    ticks: { color: 'rgba(229,226,225,0.4)', stepSize: 1 },
+                },
+            },
+        },
+    });
+}
+
+function renderModSucTable() {
+    if (!_modSucData) return;
+    const { taller: tallerFiltro, marca: marcaFiltro, modelos: modeloSel } = _getModFiltros();
+    const { talleres, rows } = _modSucData;
+
+    const talleresActivos = tallerFiltro === '__all__' ? talleres : [tallerFiltro];
+
+    // Filtrar filas por todos los criterios activos
+    const rowsFiltrados = rows.filter(r => {
+        if (modeloSel && !modeloSel.has(r.modelo)) return false;
+        if (marcaFiltro !== '__all__' && (r.marca || '') !== marcaFiltro) return false;
+        return talleresActivos.some(t => (r[t] || 0) > 0);
+    });
+
+    // Recalcular total con solo los talleres activos
+    const rowsConTotal = rowsFiltrados.map(r => ({
+        ...r,
+        total: talleresActivos.reduce((acc, t) => acc + (r[t] || 0), 0),
+    }));
+
+    // Columnas: Marca | Segmento | Modelo | talleres activos | Total
+    const cols = [
+        { key: 'marca',  label: 'Marca',  fmt: v => escHtml(String(v || '—')) },
+        { key: 'modelo', label: 'Modelo' },
+        ...talleresActivos.map(t => ({ key: t, label: t, fmt: fmt })),
+        { key: 'total', label: 'Total', fmt: fmt },
+    ];
+    document.getElementById('mod-suc-table').innerHTML =
+        buildTable(cols, rowsConTotal, { raw: true });
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  DETALLE UNIDADES
+// ═══════════════════════════════════════════════════════
+let _detTimer = null;
+let _detSelectsReady = false;
+
+function loadDetalle(params) {
+    document.getElementById('det-loading').style.display = 'flex';
+    document.getElementById('det-table').style.display   = 'none';
+
+    const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries(params).filter(([, v]) => v && v !== '1000'))
+    ).toString();
+
+    authFetch('/api/detalle' + (qs ? '?' + qs : ''))
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderDetalle(data))
+        .catch(err => {
+            document.getElementById('det-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+function renderDetalle(data) {
+    document.getElementById('det-loading').style.display = 'none';
+    document.getElementById('det-table').style.display   = 'block';
+
+    // Populate selects on first load
+    if (!_detSelectsReady) {
+        _detSelectsReady = true;
+        const selT = document.getElementById('det-taller');
+        const selE = document.getElementById('det-empresa');
+        (data.talleres || []).forEach(t => {
+            const o = document.createElement('option'); o.value = t; o.textContent = t;
+            selT.appendChild(o);
+        });
+        (data.empresas || []).forEach(e => {
+            const o = document.createElement('option'); o.value = e; o.textContent = e;
+            selE.appendChild(o);
+        });
+    }
+
+    const total  = data.total || 0;
+    const shown  = (data.rows || []).length;
+    document.getElementById('det-info').textContent =
+        `Mostrando ${shown.toLocaleString('es-CL')} de ${total.toLocaleString('es-CL')} filas filtradas` +
+        (total > 500 ? ' — descarga el CSV para ver todas' : '');
+
+    const cols = [
+        { key: 'unit_id',                     label: 'ID / VIN' },
+        { key: 'empresa',                     label: 'Empresa' },
+        { key: 'patente',                     label: 'Patente' },
+        { key: 'modelo',                      label: 'Modelo' },
+        { key: 'taller_cercano_nombre',       label: 'Taller asignado' },
+        { key: 'distancia_taller_cercano_km', label: 'Dist. (km)', fmt: v => fmtDec(v) },
+        { key: 'dentro_radio_taller',         label: 'Dentro radio', fmt: v =>
+            `<span style="color:${v ? '#4ade80' : '#f87171'};font-weight:600">${v ? '✓' : '✗'}</span>` },
+        { key: 'radio_taller_km',             label: 'Radio (km)', fmt: v => fmtDec(v) },
+    ];
+
+    const tableHtml = buildTable(cols, data.rows || [], { raw: true, stickyHeader: true });
+    document.getElementById('det-table').innerHTML = `
+        <div style="
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 330px);
+            min-height: 280px;
+        ">${tableHtml}</div>`;
+}
+
+function applyDetalleFilter() {
+    const dist = parseInt(document.getElementById('det-dist').value, 10);
+    document.getElementById('det-dist-label').textContent =
+        dist >= 1000 ? 'sin límite' : `${dist} km`;
+    loadDetalle({
+        taller:   document.getElementById('det-taller').value,
+        empresa:  document.getElementById('det-empresa').value,
+        q:        document.getElementById('det-q').value,
+        dist_max: dist < 1000 ? dist : '',
+    });
+}
+
+function applyDetalleFilterDebounced() {
+    clearTimeout(_detTimer);
+    _detTimer = setTimeout(applyDetalleFilter, 420);
+    // update label immediately
+    const dist = parseInt(document.getElementById('det-dist').value, 10);
+    document.getElementById('det-dist-label').textContent =
+        dist >= 1000 ? 'sin límite' : `${dist} km`;
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  TENDENCIA SEMANAL
+// ═══════════════════════════════════════════════════════
+let _tendData = null;
+let _tendChart = null;
+
+function loadTendencia() {
+    authFetch('/api/tendencia')
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => renderTendencia(data))
+        .catch(err => {
+            document.getElementById('tend-loading').innerHTML =
+                `<div style="color:#f87171;font-size:12px">Error: ${err.message}</div>`;
+        });
+}
+
+const TEND_COLORS = [
+    '#f2be8c','#a7ccea','#7dd3a8','#c084fc','#fb923c',
+    '#38bdf8','#f472b6','#a3e635','#fbbf24','#60a5fa',
+];
+
+function renderTendencia(data) {
+    _tendData = data;
+    document.getElementById('tend-loading').style.display = 'none';
+
+    if (!data.labels || !data.labels.length) {
+        document.getElementById('tend-loading').style.display = 'flex';
+        document.getElementById('tend-loading').textContent = 'Sin datos de tendencia. Acumula más snapshots.';
+        return;
+    }
+
+    document.getElementById('tend-content').style.display = 'block';
+
+    // Checkboxes: first 5 talleres pre-selected
+    const checks = document.getElementById('tend-checks');
+    checks.innerHTML = '';
+    (data.talleres || []).forEach((t, i) => {
+        const id = `tc-${i}`;
+        const label = document.createElement('label');
+        label.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-colors';
+        label.style.background = 'rgba(53,53,52,0.4)';
+        label.style.border = '1px solid rgba(53,53,52,0.6)';
+        const chk = document.createElement('input');
+        chk.type = 'checkbox'; chk.id = id;
+        chk.checked = i < 5;
+        chk.style.accentColor = TEND_COLORS[i % TEND_COLORS.length];
+        chk.addEventListener('change', () => updateTendenciaChart());
+        const dot = document.createElement('span');
+        dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;
+            background:${TEND_COLORS[i % TEND_COLORS.length]};flex-shrink:0`;
+        const txt = document.createElement('span');
+        txt.className = 'text-xs text-[#e5e2e1]/70';
+        txt.textContent = t;
+        label.append(chk, dot, txt);
+        checks.appendChild(label);
+    });
+
+    updateTendenciaChart();
+}
+
+function updateTendenciaChart() {
+    if (!_tendData) return;
+    const talleres = _tendData.talleres || [];
+    const selected = talleres.filter((_, i) =>
+        document.getElementById(`tc-${i}`) && document.getElementById(`tc-${i}`).checked
+    );
+    const seriesMap = {};
+    (_tendData.series || []).forEach(s => { seriesMap[s.taller] = s.data; });
+
+    if (_tendChart) _tendChart.destroy();
+    _tendChart = new Chart(document.getElementById('chart-tendencia'), {
+        type: 'line',
+        data: {
+            labels: _tendData.labels,
+            datasets: selected.map((t, i) => ({
+                label: t,
+                data: seriesMap[t] || [],
+                borderColor: TEND_COLORS[talleres.indexOf(t) % TEND_COLORS.length],
+                backgroundColor: TEND_COLORS[talleres.indexOf(t) % TEND_COLORS.length] + '18',
+                borderWidth: 2, pointRadius: 4, tension: 0.3,
+                fill: false,
+            })),
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: 'rgba(229,226,225,0.55)', padding: 16, usePointStyle: true, pointStyleWidth: 10 },
+                },
+            },
+            scales: {
+                x: { grid: { color: 'rgba(53,53,52,0.4)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+                y: { grid: { color: 'rgba(53,53,52,0.4)' }, ticks: { color: 'rgba(229,226,225,0.4)' } },
+            },
+        },
+    });
+
+    // Render pivot table
+    const cols = [{ key: 'semana', label: 'Semana' }]
+        .concat(selected.map(t => ({ key: t, label: t, fmt: v => fmt(v || 0) })));
+
+    const rows = (_tendData.labels || []).map((semana, wi) => {
+        const row = { semana };
+        selected.forEach(t => { row[t] = (seriesMap[t] || [])[wi] ?? 0; });
+        return row;
+    });
+
+    document.getElementById('tend-table').innerHTML = buildTable(cols, rows);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  REPORTES
+// ═══════════════════════════════════════════════════════
+async function authDownload(path, filename) {
+    const btn = document.querySelector(`[data-dl="${path}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Descargando…'; }
+    try {
+        const res = await authFetch(path);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    } catch(e) {
+        alert(`Error al descargar: ${e.message}`);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="icon" style="font-size:16px;">download</span> Descargar';
+        }
+    }
+}
+
+function renderReportes() {
+    const snapTs = document.getElementById('snap-ts-header').textContent;
+    if (snapTs) {
+        document.getElementById('rep-snap-ts').textContent =
+            `Datos del último snapshot (${snapTs.replace('Snapshot: ', '')})`;
+    }
+
+    const cards = [
+        {
+            icon:  'directions_bus',
+            title: 'Snapshot Completo de Unidades',
+            desc:  'Todas las unidades GPS del último snapshot con taller más cercano, empresa y distancia.',
+            path:  '/api/export/units',
+            file:  'snapshot_units.csv',
+        },
+        {
+            icon:  'build',
+            title: 'Detalle por Taller',
+            desc:  'Unidades por taller con distancias, dentro/fuera del radio y empresa.',
+            path:  '/api/export/detalle',
+            file:  'detalle_unidades.csv',
+        },
+        {
+            icon:  'radar',
+            title: 'Cobertura Overlap por Taller',
+            desc:  'Unidades en radio de 100 km por taller (overlap — una unidad puede aparecer en varios).',
+            path:  '/api/export/cobertura',
+            file:  'coverage_overlap.csv',
+        },
+        {
+            icon:  'map',
+            title: 'KPIs por Zona',
+            desc:  'Resumen de cobertura por zona geográfica y país: unidades, % cobertura, distancia promedio.',
+            path:  '/api/export/zonas',
+            file:  'kpis_zonas.csv',
+        },
+    ];
+
+    document.getElementById('rep-cards').innerHTML = cards.map(c => `
+        <div class="section-card flex items-center gap-6">
+            <div class="w-12 h-12 rounded-xl flex-shrink-0 flex items-center justify-center"
+                 style="background:rgba(242,190,140,0.12); border:1px solid rgba(242,190,140,0.2)">
+                <span class="icon text-[#f2be8c]">${c.icon}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-bold text-sm text-[#e5e2e1] mb-1">${c.title}</div>
+                <div class="text-xs text-[#e5e2e1]/40 leading-relaxed">${c.desc}</div>
+            </div>
+            <button data-dl="${c.path}" onclick="authDownload('${c.path}','${c.file}')"
+               class="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-lg
+                      font-bold text-xs tracking-wide uppercase transition-all active:scale-95
+                      hover:bg-[#f0bd8b] disabled:opacity-50"
+               style="background:#f2be8c; color:#482904;">
+                <span class="icon" style="font-size:16px;">download</span>
+                Descargar
+            </button>
+        </div>
+    `).join('');
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  ESTADO DE FLOTA
+// ═══════════════════════════════════════════════════════
+let _efData = null;
+let _efTimer = null;
+
+const EF_ESTADO_CFG = {
+    CRITICO:   { label: 'Crítico',   cls: 'text-red-400',    badge: 'bg-red-500/15 text-red-400 border border-red-500/30' },
+    ATENCION:  { label: 'Atención',  cls: 'text-yellow-400', badge: 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/30' },
+    OK:        { label: 'OK',        cls: 'text-green-400',  badge: 'bg-green-500/15 text-green-400 border border-green-500/30' },
+    SIN_DATOS: { label: 'Sin datos', cls: 'text-[#e5e2e1]/30', badge: 'bg-[#353534]/40 text-[#e5e2e1]/30 border border-[#353534]/40' },
+};
+
+function updateEfKPIs(rows) {
+    document.getElementById('ef-con-can').textContent    = fmt(rows.filter(r => r.estado !== 'SIN_DATOS').length);
+    document.getElementById('ef-sin-can').textContent    = fmt(rows.filter(r => r.estado === 'SIN_DATOS').length);
+    document.getElementById('ef-criticos').textContent   = fmt(rows.filter(r => r.estado === 'CRITICO').length);
+    document.getElementById('ef-atencion').textContent   = fmt(rows.filter(r => r.estado === 'ATENCION').length);
+    document.getElementById('ef-con-fallas').textContent = fmt(rows.filter(r => r.fallas_count > 0).length);
+}
+
+function loadEstadoFlota() {
+    document.getElementById('ef-loading').style.display = 'flex';
+    document.getElementById('ef-table').style.display   = 'none';
+    document.getElementById('ef-legend').style.display  = 'none';
+
+    authFetch('/api/estado-flota')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            _efData = data;
+
+            updateEfKPIs(data.rows);
+            document.getElementById('ef-kpis').style.cssText = 'display:grid!important';
+
+            // Empresa select
+            const empSel = document.getElementById('ef-empresa');
+            empSel.innerHTML = '<option value="">Todas las empresas</option>' +
+                (data.empresas || []).map(e => `<option value="${escHtml(e)}">${escHtml(e)}</option>`).join('');
+
+            // Marca select
+            const marcaSel = document.getElementById('ef-marca');
+            marcaSel.innerHTML = '<option value="">Todas las marcas</option>' +
+                (data.marcas || []).map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('');
+
+            // Segmento select
+            const segSel = document.getElementById('ef-segmento');
+            segSel.innerHTML = '<option value="">Todos los segmentos</option>' +
+                (data.segmentos || []).map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+
+            renderEstadoFlotaTable(data.rows);
+            renderEfLegend(data.rows);
+            document.getElementById('ef-loading').style.display = 'none';
+        })
+        .catch(err => {
+            document.getElementById('ef-loading').innerHTML =
+                `<div style="color:#f87171;font-size:11px;padding:16px;text-align:center">Error: ${err.message}</div>`;
+        });
+}
+
+function renderEstadoFlotaTable(rows) {
+    const el = document.getElementById('ef-table');
+    if (!rows || rows.length === 0) {
+        el.innerHTML = '<div class="p-8 text-center text-xs text-[#e5e2e1]/30">Sin datos para los filtros seleccionados</div>';
+        el.style.display = 'block';
+        document.getElementById('ef-info').textContent = '0 unidades';
+        return;
+    }
+
+    const EF_PAIS_FLAG = { 'Chile': '🇨🇱', 'Colombia': '🇨🇴', 'Peru': '🇵🇪', 'Paraguay': '🇵🇾' };
+    window._efRenderedRows = rows;
+
+    // Tabla con scroll vertical + horizontal y headers pegados al tope
+    const tableRows = rows.map((r, idx) => {
+        const cfg  = EF_ESTADO_CFG[r.estado] || EF_ESTADO_CFG.SIN_DATOS;
+        const badge = `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.badge}">${cfg.label}</span>`;
+        const odo  = r.can_odometer  != null ? fmt(r.can_odometer)  + ' km' : '—';
+        const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h' : '—';
+        const prox = r.proximo_servicio_km != null ? fmt(r.proximo_servicio_km) + ' km' : '—';
+        let kmRest = '—';
+        if (r.km_restantes != null) {
+            const cls = r.estado === 'CRITICO' ? 'text-red-400 font-bold' :
+                        r.estado === 'ATENCION' ? 'text-yellow-400 font-bold' : 'text-green-400';
+            kmRest = `<span class="${cls}">${fmt(r.km_restantes)} km</span>`;
+        }
+        const umbral = r.umbral_km != null
+            ? `${fmt(r.umbral_km)} km<br><span class="text-[10px] text-[#e5e2e1]/30">${r.marca_detectada}</span>`
+            : '—';
+        let fallaCell = '<span class="text-[#e5e2e1]/25">—</span>';
+        if (r.fallas_count > 0) {
+            const prioBadge = r.prioridad_falla === 'Urgente'
+                ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">Urgente</span>`
+                : `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">Seguimiento</span>`;
+            const desc = r.descripcion_falla
+                ? `<div class="text-[10px] text-[#e5e2e1]/45 mt-0.5" style="white-space:normal;max-width:180px">${escHtml(r.descripcion_falla)}</div>`
+                : '';
+            fallaCell = `<div>${prioBadge} <span class="text-[10px] text-[#e5e2e1]/50 ml-1">${r.fallas_count}</span>${desc}</div>`;
+        }
+        const paisFlag = EF_PAIS_FLAG[r.pais] || '';
+        const paisCell = r.pais ? `<span class="whitespace-nowrap">${paisFlag} ${escHtml(r.pais)}</span>` : '—';
+        return `<tr onclick="openTicketDrawer(${idx})" style="cursor:pointer" title="Ver gestión">
+            <td>${badge}</td>
+            <td>${fallaCell}</td>
+            <td class="text-[12px]">${paisCell}</td>
+            <td class="font-mono">${escHtml(r.patente || '—')}</td>
+            <td class="font-mono text-[11px] text-[#e5e2e1]/60">${escHtml(r.vin || '—')}</td>
+            <td>${escHtml(r.empresa || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.marca || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70">${escHtml(r.segmento || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/70 max-w-[200px]" style="white-space:normal">${escHtml(r.modelo || '—')}</td>
+            <td class="text-[12px] text-[#e5e2e1]/60">${escHtml(r.taller || '—')}</td>
+            <td class="font-mono text-right">${odo}</td>
+            <td class="font-mono text-right">${hora}</td>
+            <td class="font-mono text-right">${prox}</td>
+            <td class="font-mono text-right">${kmRest}</td>
+            <td class="text-[11px] text-center">${umbral}</td>
+        </tr>`;
+    }).join('');
+
+    // Contenedor con scroll doble: max-height deja visible la UI de filtros + KPIs,
+    // overflow-x para columnas anchas, headers sticky con fondo para que no se transparenten.
+    el.innerHTML = `
+        <div style="
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 420px);
+            min-height: 220px;
+        ">
+            <table class="data-table" style="min-width:1100px;">
+                <thead style="position:sticky; top:0; z-index:3;">
+                    <tr>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Estado</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Fallas DTC</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">País</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Patente</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">VIN</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Empresa</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Marca</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Segmento</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Modelo</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Taller más cercano</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Odómetro (km)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Horómetro (h)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Próx. servicio (km)</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Km restantes</th>
+                        <th style="background:#0e0e0e; box-shadow:0 1px 0 rgba(53,53,52,0.6);">Umbral marca</th>
+                    </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        </div>`;
+    el.style.display = 'block';
+    document.getElementById('ef-info').textContent =
+        `${fmt(rows.length)} unidades · ordenadas por urgencia`;
+}
+
+function renderEfLegend(rows) {
+    // Mostrar qué marcas se detectaron y sus umbrales
+    const marcas = {};
+    rows.forEach(r => {
+        if (r.marca_detectada && r.marca_detectada !== 'DESCONOCIDA') {
+            marcas[r.marca_detectada] = r.umbral_km;
+        }
+    });
+    const legendEl = document.getElementById('ef-legend');
+    const bodyEl   = document.getElementById('ef-legend-body');
+    if (Object.keys(marcas).length === 0) { legendEl.style.display = 'none'; return; }
+    bodyEl.innerHTML = Object.entries(marcas).sort().map(([m, u]) =>
+        `<span class="px-2 py-1 rounded text-[10px] font-mono bg-[#2a2a2a] text-[#e5e2e1]/60 border border-[#353534]/50">
+            ${m}: ${fmt(u)} km
+        </span>`
+    ).join('');
+    legendEl.style.display = 'block';
+}
+
+function applyEstadoFlotaFilter() {
+    if (!_efData) return;
+    const pais     = document.getElementById('ef-pais').value;
+    const emp      = document.getElementById('ef-empresa').value;
+    const marca    = document.getElementById('ef-marca').value;
+    const segmento = document.getElementById('ef-segmento').value;
+    const estado   = document.getElementById('ef-estado').value;
+    const dtc      = document.getElementById('ef-dtc').value;
+    const q        = document.getElementById('ef-q').value.trim().toUpperCase();
+
+    let rows = _efData.rows;
+    if (pais)     rows = rows.filter(r => r.pais     === pais);
+    if (emp)      rows = rows.filter(r => r.empresa  === emp);
+    if (marca)    rows = rows.filter(r => r.marca    === marca);
+    if (segmento) rows = rows.filter(r => r.segmento === segmento);
+    if (estado)   rows = rows.filter(r => r.estado   === estado);
+    if (dtc === 'urgente')     rows = rows.filter(r => r.prioridad_falla === 'Urgente');
+    if (dtc === 'seguimiento') rows = rows.filter(r => r.prioridad_falla === 'Seguimiento');
+    if (dtc === 'con_falla')   rows = rows.filter(r => r.fallas_count > 0);
+    if (dtc === 'sin_falla')   rows = rows.filter(r => !r.fallas_count || r.fallas_count === 0);
+    if (q)        rows = rows.filter(r =>
+        (r.patente  || '').toUpperCase().includes(q) ||
+        (r.unit_id  || '').toUpperCase().includes(q) ||
+        (r.empresa  || '').toUpperCase().includes(q) ||
+        (r.marca    || '').toUpperCase().includes(q) ||
+        (r.modelo   || '').toUpperCase().includes(q)
+    );
+    updateEfKPIs(rows);
+    renderEstadoFlotaTable(rows);
+}
+
+function applyEstadoFlotaFilterDebounced() {
+    clearTimeout(_efTimer);
+    _efTimer = setTimeout(applyEstadoFlotaFilter, 250);
+}
+
+function downloadEstadoFlotaCSV() {
+    if (!_efData) return;
+    const cols = ['pais','patente','vin','empresa','marca','segmento','modelo','taller','can_odometer','can_horometer',
+                  'marca_detectada','umbral_km','proximo_servicio_km','km_restantes','estado'];
+    const header = cols.join(',');
+    const body = _efData.rows.map(r =>
+        cols.map(c => {
+            const v = r[c] == null ? '' : String(r[c]);
+            return v.includes(',') ? `"${v}"` : v;
+        }).join(',')
+    ).join('\n');
+    const blob = new Blob(['\uFEFF' + header + '\n' + body], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'estado_flota.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SHARED: Table builder
+// ═══════════════════════════════════════════════════════
+function buildTable(cols, rows, opts = {}) {
+    // opts.stickyHeader: true → thead sticky + fondo sólido en cada <th>
+    const thStyle = opts.stickyHeader
+        ? ' style="background:#0e0e0e;box-shadow:0 1px 0 rgba(53,53,52,0.6);"'
+        : '';
+    const theadAttr = opts.stickyHeader
+        ? ' style="position:sticky;top:0;z-index:3;"'
+        : '';
+
+    const ths = cols.map(c => `<th${thStyle}>${c.label}</th>`).join('');
+
+    const trs = rows.map(row => {
+        const tds = cols.map(c => {
+            const raw = row[c.key];
+            const val = (raw == null || raw === '') ? '—' : raw;
+            const rendered = c.fmt ? c.fmt(val) : val;
+            return opts.raw ? `<td>${rendered}</td>` : `<td>${escHtml(String(rendered))}</td>`;
+        }).join('');
+        return `<tr>${tds}</tr>`;
+    }).join('');
+
+    return `<table class="data-table"><thead${theadAttr}><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  AUTH FETCH — agrega Bearer token a cada llamada /api/*
+// ═══════════════════════════════════════════════════════
+let _activeToken = null; // token capturado en doLogin, evita race con getSession()
+
+async function authFetch(url, opts = {}) {
+    // Usar token en memoria primero; si no hay, intentar getSession()
+    let token = _activeToken;
+    if (!token) {
+        const { data: { session } } = await _sbGeo.auth.getSession();
+        token = session?.access_token || null;
+    }
+    const headers = { ...(opts.headers || {}) };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const resp = await fetch(url, { ...opts, headers });
+    if (resp.status === 401) {
+        _activeToken = null;
+        document.getElementById('auth-overlay').style.display = 'flex';
+        throw new Error('Session expired');
+    }
+    return resp;
+}
+
+// ═══════════════════════════════════════════════════════
+//  AUTH + BOOT
+// ═══════════════════════════════════════════════════════
+const _SUPABASE_URL  = 'https://isdsaousyjpokzffydqm.supabase.co';
+const _SUPABASE_ANON = 'sb_publishable_iZ8j96IMuRbSQqk3VKpI9Q_ZiUZ9D0G';
+const _sbGeo = supabase.createClient(_SUPABASE_URL, _SUPABASE_ANON);
+
+function _showApp() {
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function _updateUserMenu(session) {
+    if (!session || !session.user) return;
+    const email = session.user.email || '';
+    const emailEl = document.getElementById('user-email-display');
+    if (emailEl) emailEl.textContent = email;
+    const avatar = document.getElementById('user-avatar');
+    if (avatar && email) {
+        avatar.innerHTML = `<span class="text-sm font-bold text-[#f2be8c]">${email.charAt(0).toUpperCase()}</span>`;
+    }
+}
+
+window.toggleUserMenu = function() {
+    const dd = document.getElementById('user-dropdown');
+    if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+};
+
+window.handleLogout = async function() {
+    await _sbGeo.auth.signOut();
+    const dd = document.getElementById('user-dropdown');
+    if (dd) dd.style.display = 'none';
+    const emailEl = document.getElementById('user-email-display');
+    if (emailEl) emailEl.textContent = '—';
+    const avatar = document.getElementById('user-avatar');
+    if (avatar) avatar.innerHTML = '<span class="icon text-[#f2be8c]/60">person</span>';
+    document.getElementById('auth-overlay').style.display = 'flex';
+};
+
+// Cierra el dropdown al hacer click fuera
+document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('user-menu-wrap');
+    const dd   = document.getElementById('user-dropdown');
+    if (dd && wrap && !wrap.contains(e.target)) dd.style.display = 'none';
+});
+
+async function _initAuth() {
+    // 1. ¿Vienen tokens por URL? (redirect desde portalConnect con sesión activa)
+    const params = new URLSearchParams(window.location.search);
+    const at = params.get('access_token');
+    const rt = params.get('refresh_token');
+
+    if (at && rt) {
+        const { data, error } = await _sbGeo.auth.setSession({ access_token: at, refresh_token: rt });
+        window.history.replaceState({}, '', window.location.pathname);
+        if (!error) { _activeToken = data.session?.access_token || null; _updateUserMenu(data.session); _showApp(); initDeck(); return; }
+    }
+
+    // 2. ¿Ya hay sesión activa en este browser?
+    const { data: { session } } = await _sbGeo.auth.getSession();
+    if (session) { _activeToken = session.access_token; _updateUserMenu(session); _showApp(); initDeck(); return; }
+
+    // 3. Sin sesión → el overlay de login queda visible, no se llama initDeck
+}
+
+window.doLogin = async function() {
+    const email    = (document.getElementById('auth-email').value || '').trim();
+    const password = (document.getElementById('auth-password').value || '').trim();
+    const errEl    = document.getElementById('auth-error');
+    const btn      = document.getElementById('auth-btn');
+
+    errEl.style.display = 'none';
+    if (!email || !password) {
+        errEl.textContent = 'Completa correo y contraseña.';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Verificando…';
+
+    const { data, error } = await _sbGeo.auth.signInWithPassword({ email: email, password: password });
+    if (error) {
+        errEl.textContent = 'Credenciales incorrectas. Verifica tu correo y contraseña.';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Ingresar';
+        return;
+    }
+
+    _activeToken = data.session?.access_token || null;
+    _updateUserMenu(data.session);
+    _showApp();
+    initDeck();
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('auth-password').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') window.doLogin();
+    });
+    _initAuth();
+});
+</script>
+<!-- ── Ticket Management Drawer ────────────────────────────────────────────── -->
+<div id="td-backdrop" onclick="closeTicketDrawer()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;backdrop-filter:blur(2px)"></div>
+
+<aside id="td-drawer"
+       style="display:none;position:fixed;right:0;top:0;bottom:0;width:480px;max-width:100vw;
+              background:#161a21;border-left:1px solid rgba(53,53,52,0.4);z-index:1001;
+              overflow-y:auto;box-shadow:-16px 0 48px rgba(0,0,0,0.5)">
+
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:14px 20px;border-bottom:1px solid rgba(53,53,52,0.4);
+                position:sticky;top:0;background:#161a21;z-index:2">
+        <div style="display:flex;align-items:center;gap:8px">
+            <span class="icon" style="font-size:18px;color:#f2be8c">build_circle</span>
+            <span style="font-size:13px;font-weight:700;color:#e5e2e1;letter-spacing:0.02em">Gestión de Unidad</span>
+        </div>
+        <button onclick="closeTicketDrawer()"
+                style="background:none;border:none;cursor:pointer;color:rgba(229,226,225,0.4);
+                       display:flex;align-items:center;padding:4px;border-radius:6px;transition:color 0.15s"
+                onmouseenter="this.style.color='#e5e2e1'" onmouseleave="this.style.color='rgba(229,226,225,0.4)'">
+            <span class="icon">close</span>
+        </button>
+    </div>
+
+    <div id="td-unit"   style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
+    <div id="td-ticket" style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
+    <div id="td-notes"  style="padding:16px 20px;border-bottom:1px solid rgba(53,53,52,0.25)"></div>
+    <div id="td-mant"   style="padding:16px 20px"></div>
+</aside>
+
+<script>
+// ═══ Gestión de Tickets ══════════════════════════════════════════
+let _tdActiveTicket  = null;
+let _tdCurrentUnit   = null;
+window._tdTalleres   = null;
+let _tkOpenList      = [];   // cache de tickets abiertos para openTicketFromList()
+let _tkOverdueList   = [];   // cache de tickets vencidos para openOverdueTicket()
+
+async function _ensureTdTalleres() {
+    if (window._tdTalleres) return;
+    try {
+        const r = await authFetch('/api/talleres');
+        window._tdTalleres = await r.json();
+    } catch(_) { window._tdTalleres = []; }
+}
+
+function _tdTallerSelect(id, pais, preselected) {
+    const all      = window._tdTalleres || [];
+    const inCountry = all.filter(t => t.pais === pais);
+    const list      = inCountry.length > 0 ? inCountry : all;
+    const opts = list.map(t => {
+        const lbl = t.zona ? `${t.taller_nombre} — ${t.zona}` : t.taller_nombre;
+        const sel = t.taller_nombre === preselected ? ' selected' : '';
+        return `<option value="${escHtml(t.taller_nombre)}"${sel}>${escHtml(lbl)}</option>`;
+    }).join('');
+    return `<select id="${id}"><option value="">— Sin asignar —</option>${opts}</select>`;
+}
+
+async function openTicketDrawer(idx) {
+    _tdCurrentUnit = (window._efRenderedRows || [])[idx];
+    if (!_tdCurrentUnit) return;
+    document.getElementById('td-backdrop').style.display = 'block';
+    document.getElementById('td-drawer').style.display   = 'block';
+    document.body.style.overflow = 'hidden';
+    _renderTdUnit(_tdCurrentUnit);
+    document.getElementById('td-ticket').innerHTML = '<div style="color:rgba(229,226,225,0.4);font-size:12px;padding:4px 0">Cargando…</div>';
+    document.getElementById('td-notes').innerHTML  = '';
+    document.getElementById('td-mant').innerHTML   = '';
+    await _ensureTdTalleres();
+    _loadTdTickets(_tdCurrentUnit.unit_id);
+}
+
+function closeTicketDrawer() {
+    document.getElementById('td-backdrop').style.display = 'none';
+    document.getElementById('td-drawer').style.display   = 'none';
+    document.body.style.overflow = '';
+    _tdActiveTicket = null;
+    _tdCurrentUnit  = null;
+}
+
+// ── Núcleo: abre el drawer para un ticket específico por objeto ticket ────────
+async function _openDrawerForTicket(ticket) {
+    // Construir contexto mínimo de unidad desde los campos del ticket
+    _tdCurrentUnit = {
+        unit_id:       ticket.unit_id,
+        patente:       ticket.patente || ticket.unit_id,
+        empresa:       ticket.empresa || '',
+        vin:           ticket.vin     || '',
+        pais:          '',
+        can_odometer:  null,
+        can_horometer: null,
+        estado:        'SIN_DATOS',
+        fallas_count:  0,
+        modelo:        null,
+        taller:        ticket.assigned_to || '',
+    };
+    document.getElementById('td-backdrop').style.display = 'block';
+    document.getElementById('td-drawer').style.display   = 'block';
+    document.body.style.overflow = 'hidden';
+    _renderTdUnit(_tdCurrentUnit);
+    document.getElementById('td-ticket').innerHTML =
+        '<div style="color:rgba(229,226,225,0.4);font-size:12px;padding:4px 0">Cargando…</div>';
+    document.getElementById('td-notes').innerHTML = '';
+    document.getElementById('td-mant').innerHTML  = '';
+    await _ensureTdTalleres();
+    try {
+        const r    = await authFetch('/api/tickets/' + ticket.id);
+        const full = await r.json();
+        if (full.error) throw new Error(full.error);
+        _tdActiveTicket = full;
+        _renderTdTicket(full, 0);
+        _renderTdNotes(full);
+        _loadMantencionHistory(full.unit_id);
+    } catch(e) {
+        document.getElementById('td-ticket').innerHTML =
+            `<div style="color:#f87171;font-size:11px">Error cargando ticket: ${e.message}</div>`;
+    }
+}
+
+// Desde tabla "Tickets Abiertos"
+async function openTicketFromList(idx) {
+    const t = _tkOpenList[idx];
+    if (t) await _openDrawerForTicket(t);
+}
+
+// Desde tabla "Tickets Vencidos"
+async function openOverdueTicket(idx) {
+    const t = _tkOverdueList[idx];
+    if (t) await _openDrawerForTicket(t);
+}
+
+// Recarga el ticket activo por ID (usado por acciones del drawer)
+async function _reloadActiveTicket() {
+    if (_tdActiveTicket && _tdActiveTicket.id) {
+        try {
+            const r    = await authFetch('/api/tickets/' + _tdActiveTicket.id);
+            const full = await r.json();
+            _tdActiveTicket = full;
+            _renderTdTicket(full, 0);
+            _renderTdNotes(full);
+            _loadMantencionHistory(full.unit_id);
+        } catch(e) {
+            document.getElementById('td-ticket').innerHTML =
+                `<div style="color:#f87171;font-size:11px">Error: ${e.message}</div>`;
+        }
+        // Refrescar panel de tickets si está visible
+        const panel = document.getElementById('ef-tickets-panel');
+        if (panel && panel.style.display !== 'none') loadTicketKpis();
+    } else if (_tdCurrentUnit) {
+        _loadTdTickets(_tdCurrentUnit.unit_id);
+    }
+}
+
+function _tdBadge(label, bg, color, border) {
+    return `<span style="display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10px;font-weight:700;background:${bg};color:${color};border:1px solid ${border}">${label}</span>`;
+}
+const _TD_EF = {
+    CRITICO:   () => _tdBadge('Crítico',   'rgba(239,68,68,0.15)',  '#f87171', 'rgba(239,68,68,0.35)'),
+    ATENCION:  () => _tdBadge('Atención',  'rgba(251,191,36,0.15)', '#fbbf24', 'rgba(251,191,36,0.35)'),
+    OK:        () => _tdBadge('OK',        'rgba(74,222,128,0.15)', '#4ade80', 'rgba(74,222,128,0.35)'),
+    SIN_DATOS: () => _tdBadge('Sin datos', 'rgba(53,53,52,0.4)',    'rgba(229,226,225,0.3)', 'rgba(53,53,52,0.5)'),
+};
+const _TD_TK = {
+    pendiente:  () => _tdBadge('Pendiente',  'rgba(242,190,140,0.15)', '#f2be8c', 'rgba(242,190,140,0.35)'),
+    en_proceso: () => _tdBadge('En proceso', 'rgba(52,181,250,0.15)',  '#34b5fa', 'rgba(52,181,250,0.35)'),
+    completado: () => _tdBadge('Completado', 'rgba(74,222,128,0.15)',  '#4ade80', 'rgba(74,222,128,0.35)'),
+    cerrado:    () => _tdBadge('Cerrado',    'rgba(74,222,128,0.15)',  '#4ade80', 'rgba(74,222,128,0.35)'),
+    cancelado:  () => _tdBadge('Cancelado',  'rgba(53,53,52,0.4)',     'rgba(229,226,225,0.3)', 'rgba(53,53,52,0.5)'),
+    vencido:    () => _tdBadge('Vencido ⚠',  'rgba(239,68,68,0.15)',   '#f87171', 'rgba(239,68,68,0.35)'),
+};
+const _TD_PR = {
+    alta:  () => _tdBadge('Alta',  'rgba(239,68,68,0.15)',  '#f87171', 'rgba(239,68,68,0.35)'),
+    media: () => _tdBadge('Media', 'rgba(242,190,140,0.15)','#f2be8c', 'rgba(242,190,140,0.35)'),
+    baja:  () => _tdBadge('Baja',  'rgba(74,222,128,0.15)', '#4ade80', 'rgba(74,222,128,0.35)'),
+};
+const _TD_FLAG = {'Chile':'🇨🇱','Colombia':'🇨🇴','Peru':'🇵🇪','Paraguay':'🇵🇾'};
+
+function _renderTdUnit(r) {
+    const flag = _TD_FLAG[r.pais] || '';
+    const odo  = r.can_odometer  != null ? fmt(r.can_odometer)        + ' km' : '—';
+    const hora = r.can_horometer != null ? fmtDec(r.can_horometer, 1) + ' h'  : '—';
+    const efBadge = (_TD_EF[r.estado] || _TD_EF.SIN_DATOS)();
+    document.getElementById('td-unit').innerHTML = `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px">
+            <div>
+                <div style="font-size:22px;font-weight:700;color:#e5e2e1;font-family:'Space Grotesk',sans-serif;letter-spacing:0.01em">
+                    ${escHtml(r.patente || r.unit_id || '—')}
+                </div>
+                <div style="font-size:11px;color:rgba(229,226,225,0.5);margin-top:3px">
+                    ${flag} ${escHtml(r.pais||'')} · ${escHtml(r.empresa||'—')}
+                </div>
+                ${r.vin ? `<div style="font-size:10px;color:rgba(229,226,225,0.35);font-family:monospace;margin-top:2px">${escHtml(r.vin)}</div>` : ''}
+                ${r.modelo ? `<div style="font-size:11px;color:rgba(229,226,225,0.45);margin-top:2px">${escHtml(r.modelo)}</div>` : ''}
+            </div>
+            ${efBadge}
+        </div>
+        <div class="section-card" style="padding:12px 16px;margin-bottom:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div>
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Odómetro</div>
+                    <div style="font-size:16px;font-weight:700;color:#e5e2e1;font-family:monospace">${odo}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Horómetro</div>
+                    <div style="font-size:16px;font-weight:700;color:#e5e2e1;font-family:monospace">${hora}</div>
+                </div>
+            </div>
+        </div>
+        ${r.fallas_count > 0 ? `
+        <div class="section-card" style="padding:10px 14px;display:flex;align-items:center;gap:10px;
+                    background:rgba(239,68,68,0.05);border-color:rgba(239,68,68,0.2)">
+            <span class="icon" style="color:#f87171;font-size:18px">warning</span>
+            <div>
+                <span style="font-size:12px;font-weight:600;color:#f87171">${r.fallas_count} falla${r.fallas_count>1?'s':''} DTC</span>
+                ${r.prioridad_falla === 'Urgente' ? `<span style="margin-left:8px;font-size:10px;padding:1px 7px;border-radius:4px;
+                    background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.3)">Urgente</span>` : ''}
+            </div>
+        </div>` : ''}`;
+}
+
+function _tdFmtDate(dt) {
+    if (!dt) return '—';
+    try { return new Date(dt).toLocaleString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+    catch(_) { return String(dt); }
+}
+
+async function _loadTdTickets(unit_id) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    try {
+        const r    = await authFetch('/api/tickets?unit_id=' + encodeURIComponent(unit_id));
+        const list = await r.json();
+        const open = (list || []).find(t => !TERMINAL.has(t.estado));
+        const closedCount = (list || []).filter(t => TERMINAL.has(t.estado)).length;
+        if (open) {
+            const r2   = await authFetch('/api/tickets/' + open.id);
+            const full = await r2.json();
+            _tdActiveTicket = full;
+            _renderTdTicket(full, closedCount);
+            _renderTdNotes(full);
+        } else {
+            _tdActiveTicket = null;
+            _renderTdTicket(null, closedCount);
+            document.getElementById('td-notes').innerHTML = '';
+        }
+        _loadMantencionHistory(unit_id);
+    } catch(e) {
+        document.getElementById('td-ticket').innerHTML = `<div style="color:#f87171;font-size:11px">Error: ${e.message}</div>`;
+    }
+}
+
+function _renderTdTicket(ticket, closedCount) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const el            = document.getElementById('td-ticket');
+    const pais          = _tdCurrentUnit ? (_tdCurrentUnit.pais  || '') : '';
+    const nearestTaller = _tdCurrentUnit ? (_tdCurrentUnit.taller || '') : '';
+    if (!ticket) {
+        el.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+                <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">Orden de Trabajo</span>
+                ${closedCount ? `<span style="font-size:11px;color:rgba(229,226,225,0.4)">${closedCount} cerrada${closedCount>1?'s':''}</span>` : ''}
+            </div>
+            <div class="section-card" style="padding:16px">
+                <div class="text-[10px] text-[#f2be8c] font-bold tracking-wider uppercase mb-3">Nueva orden de trabajo</div>
+
+                <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Descripción</label>
+                <textarea id="td-new-desc" rows="3" placeholder="Describe el trabajo a realizar…"
+                    style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                           padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                           resize:vertical;outline:none;box-sizing:border-box;margin-bottom:12px"></textarea>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                    <div>
+                        <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Prioridad</label>
+                        <select id="td-new-prio">
+                            <option value="alta">🔴 Alta</option>
+                            <option value="media" selected>🟡 Media</option>
+                            <option value="baja">🟢 Baja</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Estado inicial</label>
+                        <select id="td-new-estado">
+                            <option value="pendiente">Pendiente</option>
+                            <option value="en_proceso">En proceso</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Asignar a taller</label>
+                ${_tdTallerSelect('td-new-assign', pais, nearestTaller)}
+                ${nearestTaller ? `
+                <div style="margin-top:6px;display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(229,226,225,0.45)">
+                    <span class="icon" style="font-size:14px;color:#f2be8c">near_me</span>
+                    Más cercano según análisis: <strong style="color:#f2be8c">${escHtml(nearestTaller)}</strong>
+                </div>` : ''}
+
+                <button onclick="_tdCreateTicket()"
+                    style="margin-top:16px;width:100%;padding:9px;border-radius:8px;
+                           background:linear-gradient(135deg,#f2be8c,#e5784e);color:#1c1b1b;
+                           font-weight:700;font-size:12px;border:none;cursor:pointer;letter-spacing:0.05em">
+                    <span class="icon" style="font-size:15px;vertical-align:middle;margin-right:4px">add_task</span>Crear orden de trabajo
+                </button>
+            </div>`;
+        return;
+    }
+
+    const tkBadge = (ticket.es_vencido ? _TD_TK.vencido : (_TD_TK[ticket.estado] || _TD_TK.pendiente))();
+    const prBadge = (_TD_PR[ticket.prioridad] || _TD_PR.media)();
+    el.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div>
+                <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">Orden #${ticket.id}</span>
+                <div style="font-size:10px;color:rgba(229,226,225,0.4);margin-top:3px">
+                    Creada ${_tdFmtDate(ticket.created_at)}
+                    ${ticket.closed_at ? ` · Cerrada ${_tdFmtDate(ticket.closed_at)}` : ''}
+                </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">${prBadge} ${tkBadge}</div>
+        </div>
+
+        ${ticket.descripcion ? `
+        <div class="section-card" style="padding:10px 14px;margin-bottom:12px;font-size:13px;color:#e5e2e1;line-height:1.55">
+            ${escHtml(ticket.descripcion)}
+        </div>` : ''}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;font-size:12px">
+            <div>
+                <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Creado por</div>
+                <div style="color:#e5e2e1">${escHtml(ticket.created_by||'—')}</div>
+            </div>
+            <div>
+                <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Actualizado</div>
+                <div style="color:#e5e2e1">${_tdFmtDate(ticket.updated_at)}</div>
+            </div>
+        </div>
+
+        ${!TERMINAL.has(ticket.estado) ? `
+        <div style="margin-bottom:14px">
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Asignar a taller</label>
+            <div style="display:flex;gap:8px;align-items:center">
+                <div style="flex:1">${_tdTallerSelect('td-assign-inp', pais, ticket.assigned_to||nearestTaller)}</div>
+                <button onclick="_tdSaveAssign()"
+                    style="padding:8px 14px;border-radius:6px;background:rgba(242,190,140,0.1);
+                           color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:12px;font-weight:700;
+                           cursor:pointer;white-space:nowrap">
+                    Guardar
+                </button>
+            </div>
+            ${nearestTaller && nearestTaller !== ticket.assigned_to ? `
+            <div style="margin-top:5px;font-size:11px;color:rgba(229,226,225,0.4);display:flex;align-items:center;gap:5px">
+                <span class="icon" style="font-size:13px;color:#f2be8c">near_me</span>
+                Más cercano: <strong style="color:#f2be8c">${escHtml(nearestTaller)}</strong>
+            </div>` : ''}
+        </div>` : `
+        <div style="margin-bottom:14px;font-size:12px">
+            <div class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1">Asignado a</div>
+            <div style="color:#e5e2e1">${escHtml(ticket.assigned_to||'—')}</div>
+        </div>`}
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            ${ticket.estado === 'pendiente' ? `
+            <button onclick="_tdSetStatus('en_proceso')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(52,181,250,0.1);color:#34b5fa;
+                       border:1px solid rgba(52,181,250,0.3);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">play_arrow</span>Iniciar
+            </button>` : ''}
+            ${!TERMINAL.has(ticket.estado) ? `
+            <button onclick="_tdSetStatus('completado')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(74,222,128,0.1);color:#4ade80;
+                       border:1px solid rgba(74,222,128,0.3);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">check_circle</span>Completar
+            </button>
+            <button onclick="_tdSetStatus('cancelado')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(53,53,52,0.3);color:rgba(229,226,225,0.5);
+                       border:1px solid rgba(53,53,52,0.5);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">cancel</span>Cancelar
+            </button>` : ''}
+            ${TERMINAL.has(ticket.estado) ? `
+            <button onclick="_tdSetStatus('pendiente')"
+                style="padding:7px 14px;border-radius:8px;background:rgba(242,190,140,0.1);color:#f2be8c;
+                       border:1px solid rgba(242,190,140,0.3);font-size:12px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">refresh</span>Reabrir
+            </button>` : ''}
+        </div>`;
+}
+
+function _renderTdNotes(ticket) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const notes    = ticket.notes || [];
+    document.getElementById('td-notes').innerHTML = `
+        <div class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em] mb-3">
+            Notas <span style="color:rgba(229,226,225,0.4);font-weight:400">(${notes.length})</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+            ${notes.length === 0 ? '<div style="font-size:11px;color:rgba(229,226,225,0.3)">Sin notas.</div>' : ''}
+            ${notes.map(n => `
+            <div class="section-card" style="padding:10px 14px">
+                <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+                    <span style="font-size:10px;font-weight:700;color:#f2be8c">${escHtml(n.author||'Anónimo')}</span>
+                    <span style="font-size:10px;color:rgba(229,226,225,0.4)">${_tdFmtDate(n.created_at)}</span>
+                </div>
+                <div style="font-size:12px;color:#e5e2e1;line-height:1.5;white-space:pre-wrap">${escHtml(n.body)}</div>
+            </div>`).join('')}
+        </div>
+        ${!TERMINAL.has(ticket.estado) ? `
+        <div class="section-card" style="padding:14px">
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Agregar nota</label>
+            <textarea id="td-note-inp" rows="3" placeholder="Escribe una observación…"
+                style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                       padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                       resize:vertical;outline:none;box-sizing:border-box;margin-bottom:10px"></textarea>
+            <button onclick="_tdAddNote()"
+                style="width:100%;padding:7px;border-radius:8px;background:rgba(242,190,140,0.1);
+                       color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:12px;
+                       font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:14px;vertical-align:middle;margin-right:3px">add_comment</span>Agregar nota
+            </button>
+        </div>` : '<div style="font-size:11px;color:rgba(229,226,225,0.3);padding:4px 0">Orden cerrada — sin nuevas notas.</div>'}`;
+}
+
+async function _tdCreateTicket() {
+    if (!_tdCurrentUnit) return;
+    const desc   = (document.getElementById('td-new-desc')?.value   || '').trim();
+    const prio   = document.getElementById('td-new-prio')?.value    || 'media';
+    const assign = (document.getElementById('td-new-assign')?.value || '').trim();
+    const estado = document.getElementById('td-new-estado')?.value  || 'pendiente';
+    const btn    = document.querySelector('#td-ticket button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando…'; }
+    try {
+        const res = await authFetch('/api/tickets', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                unit_id:     _tdCurrentUnit.unit_id,
+                vin:         _tdCurrentUnit.vin     || null,
+                patente:     _tdCurrentUnit.patente || null,
+                empresa:     _tdCurrentUnit.empresa || null,
+                descripcion: desc   || null,
+                prioridad:   prio,
+                estado:      estado,
+                assigned_to: assign || null,
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+        await _loadTdTickets(_tdCurrentUnit.unit_id);
+    } catch(e) {
+        alert('Error al crear orden: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Crear orden de trabajo'; }
+    }
+}
+
+async function _tdSetStatus(nuevo) {
+    if (!_tdActiveTicket) return;
+    try {
+        const res = await authFetch('/api/tickets/' + _tdActiveTicket.id, {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({estado: nuevo}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+        await _reloadActiveTicket();
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function _tdSaveAssign() {
+    if (!_tdActiveTicket) return;
+    const val = (document.getElementById('td-assign-inp')?.value || '').trim();
+    try {
+        const res = await authFetch('/api/tickets/' + _tdActiveTicket.id, {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({assigned_to: val || null}),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        await _reloadActiveTicket();
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function _tdAddNote() {
+    if (!_tdActiveTicket) return;
+    const inp  = document.getElementById('td-note-inp');
+    const body = (inp?.value || '').trim();
+    if (!body) return;
+    const btn = document.querySelector('#td-notes button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+    try {
+        const res = await authFetch('/api/tickets/' + _tdActiveTicket.id + '/notes', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({body}),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'HTTP ' + res.status); }
+        if (inp) inp.value = '';
+        await _reloadActiveTicket();
+    } catch(e) {
+        alert('Error al agregar nota: ' + e.message);
+        if (btn) { btn.disabled = false; }
+    }
+}
+
+// ═══ Tab switcher — Estado de Flota / Gestión de Tickets ══════════════════
+function efSwitchTab(tab) {
+    const isFlota = tab === 'flota';
+    const fBtn = document.getElementById('ef-tab-flota');
+    const tBtn = document.getElementById('ef-tab-tickets');
+    if (fBtn) {
+        fBtn.style.borderBottomColor = isFlota ? '#f2be8c' : 'transparent';
+        fBtn.style.color             = isFlota ? '#e5e2e1' : 'rgba(229,226,225,0.45)';
+    }
+    if (tBtn) {
+        tBtn.style.borderBottomColor = isFlota ? 'transparent' : '#f2be8c';
+        tBtn.style.color             = isFlota ? 'rgba(229,226,225,0.45)' : '#e5e2e1';
+    }
+    const flota  = document.getElementById('ef-flota-content');
+    const ticket = document.getElementById('ef-tickets-panel');
+    if (flota)  flota.style.display  = isFlota ? '' : 'none';
+    if (ticket) ticket.style.display = isFlota ? 'none' : 'block';
+    if (!isFlota) loadTicketKpis();
+}
+
+// ═══ Ticket KPI Dashboard ══════════════════════════════════════════════════
+async function loadTicketKpis() {
+    ['tk-abiertos','tk-vencidos','tk-en-proceso','tk-completados'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.textContent = '—';
+    });
+    const byEl   = document.getElementById('tk-by-assignee');
+    const ovEl   = document.getElementById('tk-overdue-list');
+    const openEl = document.getElementById('tk-open-list');
+    if (byEl)   byEl.innerHTML   = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    if (ovEl)   ovEl.innerHTML   = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    if (openEl) openEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Cargando…</div>';
+    try {
+        const [rKpi, rList] = await Promise.all([
+            authFetch('/api/tickets/kpis'),
+            authFetch('/api/tickets'),
+        ]);
+        const [data, allTickets] = await Promise.all([rKpi.json(), rList.json()]);
+        if (data.error) throw new Error(data.error);
+        renderTicketKpis(data);
+        renderOpenTickets(Array.isArray(allTickets) ? allTickets : []);
+    } catch(e) {
+        if (byEl)   byEl.innerHTML   = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
+        if (openEl) openEl.innerHTML = `<div style="padding:20px;color:#f87171;font-size:12px">Error: ${e.message}</div>`;
+    }
+}
+
+function renderOpenTickets(all) {
+    const TERMINAL = new Set(['completado', 'cerrado', 'cancelado']);
+    const open = all.filter(t => !TERMINAL.has(t.estado))
+                    .sort((a, b) => {
+                        const pOrd = {alta:0,media:1,baja:2};
+                        const pa = pOrd[a.prioridad] ?? 1, pb = pOrd[b.prioridad] ?? 1;
+                        if (pa !== pb) return pa - pb;
+                        return new Date(a.created_at) - new Date(b.created_at);
+                    });
+    _tkOpenList = open;  // guardamos para openTicketFromList(idx)
+    const el    = document.getElementById('tk-open-list');
+    const cntEl = document.getElementById('tk-open-count');
+    if (cntEl) cntEl.textContent = open.length > 0 ? `(${open.length})` : '';
+    if (!el) return;
+    if (open.length === 0) {
+        el.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets abiertos ✓</div>';
+        return;
+    }
+    const PR_COLOR = {alta:'#f87171', media:'#f2be8c', baja:'#4ade80'};
+    const ST_COLOR = {pendiente:'#f2be8c', en_proceso:'#34b5fa', vencido:'#f87171'};
+    el.innerHTML = `<table class="data-table">
+        <thead><tr>
+            <th>#</th><th>Patente</th><th>Empresa</th>
+            <th>Estado</th><th>Prioridad</th><th>Asignado a</th><th>Días háb.</th><th>Creado</th>
+        </tr></thead>
+        <tbody>${open.map((t, i) => {
+            const stLabel = t.es_vencido ? 'Vencido' : (t.estado === 'en_proceso' ? 'En proceso' : 'Pendiente');
+            const stKey   = t.es_vencido ? 'vencido' : t.estado;
+            const stColor = ST_COLOR[stKey] || '#e5e2e1';
+            const prColor = PR_COLOR[t.prioridad] || '#e5e2e1';
+            const dias    = _businessDaysSince(t.created_at);
+            const fechaCreado = _tdFmtDate(t.created_at);
+            return `<tr onclick="openTicketFromList(${i})" style="cursor:pointer" title="Ver detalle del ticket">
+                <td><span style="font-family:monospace;color:#f2be8c">#${t.id}</span></td>
+                <td style="font-weight:600">${escHtml(t.patente || t.unit_id || '—')}</td>
+                <td>${escHtml(t.empresa || '—')}</td>
+                <td><span style="font-size:10px;font-weight:700;color:${stColor}">${escHtml(stLabel)}</span></td>
+                <td><span style="font-size:10px;font-weight:700;color:${prColor}">${escHtml(t.prioridad || '—')}</span></td>
+                <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:11px">${escHtml(t.assigned_to || 'Sin asignar')}</td>
+                <td><span style="${dias > 5 ? 'color:#f87171;font-weight:700' : ''}">${dias}</span></td>
+                <td style="font-size:11px;color:rgba(229,226,225,0.55)">${fechaCreado}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table>`;
+}
+
+function _businessDaysSince(dateStr) {
+    if (!dateStr) return 0;
+    try {
+        const start = new Date(dateStr);
+        const now   = new Date();
+        let count = 0, d = new Date(start);
+        d.setHours(0,0,0,0);
+        const today = new Date(now); today.setHours(0,0,0,0);
+        while (d < today) {
+            d.setDate(d.getDate() + 1);
+            if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+        }
+        return count;
+    } catch(_) { return 0; }
+}
+
+function renderTicketKpis(data) {
+    const t = data.totals || {};
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val ?? '—'; };
+    setEl('tk-abiertos',   t.abiertos);
+    setEl('tk-vencidos',   t.vencidos);
+    setEl('tk-en-proceso', t.en_proceso);
+    setEl('tk-completados',t.completados);
+
+    // By assignee table
+    const byEl = document.getElementById('tk-by-assignee');
+    if (byEl) {
+        if (!data.by_assignee || data.by_assignee.length === 0) {
+            byEl.innerHTML = '<div style="padding:24px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets registrados</div>';
+        } else {
+            byEl.innerHTML = `<table class="data-table">
+                <thead><tr>
+                    <th>Ejecutivo / Taller</th><th>Total</th><th>Abiertos</th>
+                    <th>Vencidos</th><th>Completados</th><th>Prom. cierre</th>
+                </tr></thead>
+                <tbody>${data.by_assignee.map(a => `
+                <tr>
+                    <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis">${escHtml(a.assigned_to||'Sin asignar')}</td>
+                    <td>${a.total}</td>
+                    <td>${a.abiertos   > 0 ? `<span style="color:#f2be8c;font-weight:700">${a.abiertos}</span>`   : '0'}</td>
+                    <td>${a.vencidos   > 0 ? `<span style="color:#f87171;font-weight:700">${a.vencidos}</span>`   : '0'}</td>
+                    <td>${a.completados > 0 ? `<span style="color:#4ade80;font-weight:700">${a.completados}</span>` : '0'}</td>
+                    <td>${a.avg_horas_resolucion != null ? `${a.avg_horas_resolucion} h` : '—'}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+    }
+
+    // Overdue tickets
+    const ovEl   = document.getElementById('tk-overdue-list');
+    const ovCnt  = document.getElementById('tk-overdue-count');
+    if (ovCnt) ovCnt.textContent = data.overdue && data.overdue.length > 0 ? `(${data.overdue.length})` : '';
+    _tkOverdueList = data.overdue || [];   // guardamos para openOverdueTicket(idx)
+    if (ovEl) {
+        if (_tkOverdueList.length === 0) {
+            ovEl.innerHTML = '<div style="padding:20px;text-align:center;color:rgba(229,226,225,0.3);font-size:12px">Sin tickets vencidos ✓</div>';
+        } else {
+            ovEl.innerHTML = `<table class="data-table">
+                <thead><tr><th>#</th><th>Patente</th><th>Empresa</th><th>Asignado a</th><th>Estado</th><th>Días háb.</th><th>Desde</th></tr></thead>
+                <tbody>${_tkOverdueList.map((o, i) => `
+                <tr onclick="openOverdueTicket(${i})" style="cursor:pointer" title="Ver y gestionar ticket vencido">
+                    <td><span style="font-family:monospace;color:#f87171">#${o.id}</span></td>
+                    <td style="font-weight:600">${escHtml(o.patente||o.unit_id||'—')}</td>
+                    <td>${escHtml(o.empresa||'—')}</td>
+                    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis">${escHtml(o.assigned_to||'—')}</td>
+                    <td><span style="color:#f2be8c;font-size:10px;font-weight:700;text-transform:uppercase">${escHtml(o.estado)}</span></td>
+                    <td><span style="color:#f87171;font-weight:700">${o.dias_habiles}</span></td>
+                    <td style="font-size:11px;color:rgba(229,226,225,0.4)">${_tdFmtDate(o.created_at)}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+    }
+}
+
+// ═══ Historial de Mantenciones ════════════════════════════════════════════
+async function _loadMantencionHistory(unit_id) {
+    const el = document.getElementById('td-mant');
+    if (!el) return;
+    el.innerHTML = '<div style="color:rgba(229,226,225,0.3);font-size:11px;padding:4px 0">Cargando historial…</div>';
+    try {
+        const r    = await authFetch('/api/maintenance-records?unit_id=' + encodeURIComponent(unit_id));
+        const list = await r.json();
+        _renderTdMant(Array.isArray(list) ? list : []);
+    } catch(_) { _renderTdMant([]); }
+}
+
+function _renderTdMant(records) {
+    const el       = document.getElementById('td-mant');
+    if (!el) return;
+    const ticketId = _tdActiveTicket ? _tdActiveTicket.id : null;
+    const TIPO_LBL = {
+        mantencion: 'Mantención preventiva',
+        dtc:        'Revisión DTC',
+        inspeccion: 'Inspección',
+        otro:       'Otro',
+    };
+    el.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <span class="text-[11px] font-bold text-[#e5e2e1] uppercase tracking-[0.08em]">
+                Historial de Mantenciones
+                <span style="color:rgba(229,226,225,0.4);font-weight:400">(${records.length})</span>
+            </span>
+            <button onclick="_tdToggleMantForm()" id="td-mant-toggle-btn"
+                style="padding:5px 12px;border-radius:6px;background:rgba(242,190,140,0.1);
+                       color:#f2be8c;border:1px solid rgba(242,190,140,0.3);font-size:11px;font-weight:700;cursor:pointer">
+                <span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">add</span>Registrar
+            </button>
+        </div>
+
+        <div id="td-mant-form" class="section-card" style="display:none;padding:14px;margin-bottom:14px">
+            <div class="text-[10px] text-[#f2be8c] font-bold tracking-wider uppercase mb-3">Registrar mantención realizada</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div>
+                    <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Tipo</label>
+                    <select id="td-mant-tipo">
+                        <option value="mantencion">Mantención preventiva</option>
+                        <option value="dtc">Revisión DTC</option>
+                        <option value="inspeccion">Inspección</option>
+                        <option value="otro">Otro</option>
+                    </select>
+                </div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+                    ${ticketId ? `
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:#e5e2e1">
+                        <input type="checkbox" id="td-mant-cerrar" checked style="width:15px;height:15px;accent-color:#f2be8c">
+                        <span>Cerrar ticket #${ticketId}</span>
+                    </label>` : '<div></div>'}
+                </div>
+            </div>
+
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Descripción</label>
+            <input type="text" id="td-mant-desc" placeholder="Ej: Cambio de aceite 15W-40, filtros…"
+                style="margin-bottom:10px;width:100%;box-sizing:border-box">
+
+            <label class="text-[10px] text-[#d4c4b7] font-bold tracking-wider uppercase mb-1.5 block">Notas adicionales</label>
+            <textarea id="td-mant-notas" rows="2" placeholder="Observaciones, próxima mantención…"
+                style="width:100%;background:#201f1f;border:1px solid rgba(53,53,52,0.6);border-radius:6px;
+                       padding:8px 12px;color:#e5e2e1;font-family:'Manrope',sans-serif;font-size:13px;
+                       resize:vertical;outline:none;box-sizing:border-box;margin-bottom:12px"></textarea>
+
+            <button onclick="_tdRegisterMantencion()"
+                style="width:100%;padding:9px;border-radius:8px;
+                       background:linear-gradient(135deg,#f2be8c,#e5784e);color:#1c1b1b;
+                       font-weight:700;font-size:12px;border:none;cursor:pointer;letter-spacing:0.05em">
+                <span class="icon" style="font-size:15px;vertical-align:middle;margin-right:4px">task_alt</span>Registrar mantención
+            </button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+            ${records.length === 0 ? '<div style="font-size:11px;color:rgba(229,226,225,0.3)">Sin mantenciones registradas.</div>' : ''}
+            ${records.map(rec => `
+            <div class="section-card" style="padding:10px 14px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <span class="icon" style="font-size:16px;color:#4ade80">task_alt</span>
+                        <span style="font-size:12px;font-weight:600;color:#e5e2e1">${escHtml(TIPO_LBL[rec.tipo] || rec.tipo || 'Mantención')}</span>
+                    </div>
+                    <span style="font-size:10px;color:rgba(229,226,225,0.4)">${_tdFmtDate(rec.fecha_realizacion)}</span>
+                </div>
+                ${rec.descripcion ? `<div style="font-size:12px;color:rgba(229,226,225,0.7);margin-bottom:4px">${escHtml(rec.descripcion)}</div>` : ''}
+                ${rec.notas       ? `<div style="font-size:11px;color:rgba(229,226,225,0.45);margin-bottom:4px">${escHtml(rec.notas)}</div>` : ''}
+                <div style="font-size:10px;color:rgba(229,226,225,0.3)">
+                    Realizado por <strong style="color:rgba(229,226,225,0.5)">${escHtml(rec.realizado_por||'—')}</strong>
+                    ${rec.ticket_id ? `<span style="margin-left:6px">· Ticket #${rec.ticket_id}</span>` : ''}
+                </div>
+            </div>`).join('')}
+        </div>`;
+}
+
+function _tdToggleMantForm() {
+    const form = document.getElementById('td-mant-form');
+    if (!form) return;
+    const show = form.style.display === 'none';
+    form.style.display = show ? 'block' : 'none';
+    const btn = document.getElementById('td-mant-toggle-btn');
+    if (btn) btn.innerHTML = show
+        ? '<span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">close</span>Cancelar'
+        : '<span class="icon" style="font-size:13px;vertical-align:middle;margin-right:3px">add</span>Registrar';
+}
+
+async function _tdRegisterMantencion() {
+    if (!_tdCurrentUnit) return;
+    const tipo     = document.getElementById('td-mant-tipo')?.value   || 'mantencion';
+    const desc     = (document.getElementById('td-mant-desc')?.value  || '').trim();
+    const notas    = (document.getElementById('td-mant-notas')?.value || '').trim();
+    const cerrar   = document.getElementById('td-mant-cerrar')?.checked;
+    const ticketId = _tdActiveTicket ? _tdActiveTicket.id : null;
+    const btn      = document.querySelector('#td-mant-form button');
+    if (btn) { btn.disabled = true; btn.textContent = 'Registrando…'; }
+    try {
+        const res = await authFetch('/api/maintenance-records', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                unit_id:       _tdCurrentUnit.unit_id,
+                vin:           _tdCurrentUnit.vin     || null,
+                patente:       _tdCurrentUnit.patente || null,
+                empresa:       _tdCurrentUnit.empresa || null,
+                tipo,
+                descripcion:   desc  || null,
+                notas:         notas || null,
+                ticket_id:     ticketId,
+                cerrar_ticket: !!(cerrar && ticketId),
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+        await _loadTdTickets(_tdCurrentUnit.unit_id);
+    } catch(e) {
+        alert('Error: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Registrar mantención'; }
+    }
+}
+</script>
+</body>
+</html>

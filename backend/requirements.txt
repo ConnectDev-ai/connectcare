@@ -1,0 +1,14 @@
+streamlit
+flask
+pandas
+numpy
+sqlalchemy
+psycopg[binary]
+openpyxl
+requests
+python-dotenv
+pydeck
+plotly
+gunicorn
+PyJWT
+flask-limiter
