@@ -1796,7 +1796,7 @@ def api_degradados():
 
     with engine.connect() as conn:
         prev_row = conn.execute(
-            text("SELECT run_id, ts FROM snapshot_run WHERE run_id < :r ORDER BY run_id DESC LIMIT 1"),
+            text("SELECT run_id, snapshot_ts_utc FROM snapshot_run WHERE run_id < :r ORDER BY run_id DESC LIMIT 1"),
             {"r": run_id},
         ).fetchone()
 
