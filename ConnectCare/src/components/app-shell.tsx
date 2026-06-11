@@ -7,9 +7,7 @@ import {
   Wrench,
   ClipboardList,
   Activity,
-  MapPin,
   FileBarChart,
-  Settings,
   Sparkles,
   Gauge,
 } from "lucide-react";
@@ -29,9 +27,7 @@ const NAV: NavItem[] = [
   { label: "Mantenciones",   href: "/mantenciones", icon: Wrench,          ready: true },
   { label: "Pautas",         href: "/pautas",        icon: ClipboardList, ready: true },
   { label: "Diagnóstico",    href: "/diagnostico",   icon: Activity,  ready: true },
-  { label: "Talleres",       href: "/talleres",      icon: MapPin },
   { label: "Reportes",       href: "/reportes",      icon: FileBarChart, ready: true },
-  { label: "Configuración",  href: "/configuracion", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
